@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BookOpenText,
@@ -62,7 +62,18 @@ function projectHref(path: string, projectId: number | null) {
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { projects, activeProjectId, setActiveProject, loading } = useProjectContext();
+
+  /** Switching project while inside a project page navigates that same page
+   *  for the newly selected project — WYSIWYG, no stale content. */
+  const switchProject = (id: number) => {
+    setActiveProject(id);
+    const match = pathname.match(/^\/projects\/(\d+)(\/.*)?$/);
+    if (match && String(id) !== match[1]) {
+      router.push(`/projects/${id}${match[2] ?? ""}`);
+    }
+  };
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -145,7 +156,7 @@ export function AppSidebar() {
         <div className="border-b border-sidebar-border px-3 py-2.5">
           <Select
             value={activeProjectId ? String(activeProjectId) : undefined}
-            onValueChange={(v) => setActiveProject(Number(v))}
+            onValueChange={(v) => switchProject(Number(v))}
             disabled={loading || projects.length === 0}
           >
             <SelectTrigger size="sm" className="w-full text-xs" aria-label="切换项目">

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { GitBranch } from "lucide-react";
+import { GitBranch, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -36,10 +36,24 @@ import {
   type ResearchNote,
   type Run,
 } from "@/lib/api";
+import { deleteProject } from "@/lib/api";
+import { useToast } from "@/components/toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { fmtDateTime } from "@/lib/format";
+import { useRouter } from "next/navigation";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const { toast } = useToast();
   const projectId = Number(params.id);
 
   const [project, setProject] = useState<Project | null>(null);
@@ -73,6 +87,23 @@ export default function ProjectDetailPage() {
     void load();
   }, [load]);
 
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = useCallback(async () => {
+    setDeleting(true);
+    try {
+      await deleteProject(projectId);
+      toast("项目已删除", "success");
+      router.push("/");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), "warning");
+    } finally {
+      setDeleting(false);
+      setConfirmOpen(false);
+    }
+  }, [projectId, router, toast]);
+
   if (loading) {
     return (
       <div className="mx-auto max-w-5xl space-y-4">
@@ -101,6 +132,29 @@ export default function ProjectDetailPage() {
         <div className="mt-2 flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
           <StatusBadge kind="project" value={project.status} />
+          <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive h-7 px-2 text-xs">
+                <Trash2 className="size-3.5" />
+                删除
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>删除项目「{project.name}」？</DialogTitle>
+                <DialogDescription>
+                  将连带删除其全部假设、实验、证据与笔记（{project.idea_count} 假设 ·{" "}
+                  {project.run_count} 实验 · {project.note_count} 笔记）。此操作不可恢复。
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setConfirmOpen(false)}>取消</Button>
+                <Button variant="destructive" onClick={() => void handleDelete()} disabled={deleting}>
+                  {deleting ? "删除中…" : "确认删除"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
         <p className="text-muted-foreground mt-1 max-w-3xl text-sm">
           {project.description ?? "暂无描述"}
