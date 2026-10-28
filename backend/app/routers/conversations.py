@@ -102,6 +102,13 @@ def payload_preview(conversation_id: int, db: Session = Depends(get_db)):
 
 # ------------------------------------------------------------------ analysis
 
+@router.get("/projects/{project_id}/analysis-jobs", response_model=list[schemas.AnalysisJobSummary])
+def list_analysis_jobs(project_id: int, db: Session = Depends(get_db)):
+    services.get_object_or_404(db, Project, project_id, "Project")
+    jobs = db.scalars(select(AnalysisJob).where(AnalysisJob.project_id == project_id)
+                      .order_by(AnalysisJob.created_at.desc(), AnalysisJob.id.desc())).all()
+    return [analysis.job_summary(db, job) for job in jobs]
+
 
 @router.post(
     "/conversations/{conversation_id}/analyze",

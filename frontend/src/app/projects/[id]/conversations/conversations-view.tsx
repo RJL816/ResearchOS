@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useRouteId } from "@/lib/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -28,7 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  getAnalysisJob,
+  listAnalysisJobs,
   getPayloadPreview,
   importConversation,
   listConversations,
@@ -59,10 +59,10 @@ const JOB_STATUS_LABEL: Record<string, string> = {
 };
 
 export default function ConversationsView() {
-  const params = useParams<{ id: string }>();
-  const projectId = Number(params.id);
+  const projectId = useRouteId();
 
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
+  const [starting, setStarting] = useState<number | null>(null);
   const [jobs, setJobs] = useState<Record<number, AnalysisJobSummary>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -74,14 +74,19 @@ export default function ConversationsView() {
 
   const load = useCallback(async () => {
     try {
+      const [conversations, history] = await Promise.all([listConversations(projectId), listAnalysisJobs(projectId)]);
+      setConversations(conversations);
+      const latest: Record<number, AnalysisJobSummary> = {};
+      for (const job of history) if (!latest[job.conversation_id]) latest[job.conversation_id] = job;
+      setJobs(latest);
       setError(null);
-      setConversations(await listConversations(projectId));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [projectId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Async API loader; updates occur after the request settles.
     void load();
   }, [load]);
 
@@ -124,33 +129,32 @@ export default function ConversationsView() {
     [doImport],
   );
 
+  const hasActiveJobs = Object.values(jobs).some((job) => job.status !== "completed" && job.status !== "failed");
+  useEffect(() => {
+    if (!hasActiveJobs) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const history = await listAnalysisJobs(projectId);
+        if (stopped) return;
+        const latest: Record<number, AnalysisJobSummary> = {};
+        for (const job of history) if (!latest[job.conversation_id]) latest[job.conversation_id] = job;
+        setJobs(latest);
+      } catch (err) { if (!stopped) setError(`更新分析进度失败：${String(err)}`); }
+      if (!stopped) timer = setTimeout(poll, 2000);
+    };
+    timer = setTimeout(poll, 1500);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [projectId, hasActiveJobs]);
+
   const analyze = useCallback(async (conversationId: number) => {
-    setError(null);
+    setStarting(conversationId); setError(null);
     try {
       const job = await startAnalysis(conversationId);
-      setJobs((prev) => ({
-        ...prev,
-        [job.id]: {
-          ...job,
-          event_count: 0,
-          proposal_count: 0,
-          pending_count: 0,
-          accepted_count: 0,
-          applied_count: 0,
-        },
-      }));
-      const timer = setInterval(async () => {
-        try {
-          const fresh = await getAnalysisJob(job.id);
-          setJobs((prev) => ({ ...prev, [fresh.id]: fresh }));
-          if (fresh.status === "completed" || fresh.status === "failed") clearInterval(timer);
-        } catch {
-          clearInterval(timer);
-        }
-      }, 1500);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+      setJobs((prev) => ({ ...prev, [conversationId]: { ...job, event_count: 0, proposal_count: 0, pending_count: 0, needs_revision_count: 0, accepted_count: 0, applied_count: 0 } }));
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setStarting(null); }
   }, []);
 
   return (
@@ -270,7 +274,7 @@ export default function ConversationsView() {
                 </div>
               )}
 
-              <Button onClick={() => void analyze(importResult.conversation.id)}>
+              <Button onClick={() => void analyze(importResult.conversation.id)} disabled={starting !== null || (jobs[importResult.conversation.id] !== undefined && !["completed", "failed"].includes(jobs[importResult.conversation.id].status))}>
                 <Brain className="size-4" />
                 第二步：开始 AI 分析
               </Button>
@@ -282,6 +286,7 @@ export default function ConversationsView() {
       <Card>
         <CardHeader>
           <CardTitle className="text-card-title">导入的会话与分析任务</CardTitle>
+          <Link className="text-sm text-primary underline" href={`/projects/${projectId}/analysis`}>查看全部历史与待审核事项</Link>
         </CardHeader>
         <CardContent>
           {conversations === null ? (
@@ -295,6 +300,7 @@ export default function ConversationsView() {
                   key={conv.id}
                   conversation={conv}
                   job={jobs[conv.id]}
+                  starting={starting === conv.id}
                   onAnalyze={() => void analyze(conv.id)}
                 />
               ))}
@@ -310,10 +316,12 @@ function ConversationRow({
   conversation,
   job,
   onAnalyze,
+  starting,
 }: {
   conversation: Conversation;
   job?: AnalysisJobSummary;
   onAnalyze: () => void;
+  starting: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3">
@@ -348,10 +356,11 @@ function ConversationRow({
           )}
         </div>
       )}
-      {!job && (
-        <Button variant="outline" size="sm" onClick={onAnalyze}>
+      {job?.error && <p className="w-full text-xs text-destructive">{job.error}</p>}
+      {(!job || job.status === "failed" || job.status === "completed") && (
+        <Button variant="outline" size="sm" onClick={onAnalyze} disabled={starting}>
           <Brain className="size-3.5" />
-          AI 分析
+          {starting ? "启动中…" : job?.status === "failed" ? "重试分析" : job ? "重新分析" : "AI 分析"}
         </Button>
       )}
     </div>

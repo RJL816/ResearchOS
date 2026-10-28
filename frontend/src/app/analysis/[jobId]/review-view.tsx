@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { EditProposalDialog } from "@/components/proposal-editor";
+import { useRouteId } from "@/lib/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -12,7 +14,6 @@ import {
   Loader2,
   MessageSquareText,
   Rocket,
-  RotateCcw,
   ShieldAlert,
   X,
 } from "lucide-react";
@@ -21,33 +22,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+
+
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
+
+
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+
 import { ResizeHandle, usePanelWidth, clampPanelWidth } from "@/components/resize-handle";
 import { ProposalGraphPreview } from "@/components/idea-graph/ProposalGraphPreview";
 import {
   applyProposals,
   getAnalysisJob,
   getConversation,
-  getIdeaGraph,
   getJobEvents,
   getJobProposals,
   reviewProposal,
@@ -92,8 +84,9 @@ const EVENT_LABEL: Record<string, string> = {
 };
 
 function ReviewInner() {
-  const params = useParams<{ jobId: string }>();
-  const jobId = Number(params.jobId);
+  const jobId = useRouteId();
+  const search = useSearchParams();
+  const [reviewing, setReviewing] = useState(false);
 
   const [job, setJob] = useState<AnalysisJobSummary | null>(null);
   const [events, setEvents] = useState<ResearchEventRead[]>([]);
@@ -113,8 +106,6 @@ function ReviewInner() {
 
   const load = useCallback(async () => {
     try {
-      setError(null);
-      setLoading(true);
       const [jobData, eventsData, proposalsData] = await Promise.all([
         getAnalysisJob(jobId),
         getJobEvents(jobId),
@@ -125,6 +116,7 @@ function ReviewInner() {
       setProposals(proposalsData);
       const conv = await getConversation(jobData.conversation_id);
       setMessages(conv.messages);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -133,18 +125,19 @@ function ReviewInner() {
   }, [jobId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Async API loader; updates occur after the request settles.
     void load();
   }, [load]);
 
   const review = useCallback(
     async (proposal: GraphChangeProposal, status: ReviewStatus, edits?: Record<string, unknown>) => {
-      setError(null);
+      setError(null); setReviewing(true);
       try {
         const fresh = await reviewProposal(proposal.id, { review_status: status, edits });
         setProposals((prev) => prev.map((p) => (p.id === fresh.id ? fresh : p)));
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
-      }
+      } finally { setReviewing(false); }
     },
     [],
   );
@@ -182,6 +175,15 @@ function ReviewInner() {
     document.getElementById(`msg-anchor-${message.sequence}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [messageById]);
 
+  useEffect(() => {
+    if (loading) return;
+    const id = Number(search.get("msg"));
+    if (messageById.has(id)) {
+      const frame = requestAnimationFrame(() => jumpToMessage(id));
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [loading, search, messageById, jumpToMessage]);
+
   if (loading) {
     return (
       <div className="mx-auto max-w-[1600px] space-y-4">
@@ -209,8 +211,8 @@ function ReviewInner() {
     <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <Link href={`/projects/${job.project_id}/conversations`} className="text-muted-foreground hover:text-foreground text-sm">
-            ← 导入对话
+          <Link href={`/projects/${job.project_id}/analysis`} className="text-muted-foreground hover:text-foreground text-sm">
+            ← 全部分析与待审事项
           </Link>
           <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
             <GitBranch className="size-5 text-primary" />
@@ -226,9 +228,9 @@ function ReviewInner() {
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={() => setShowPreview((v) => !v)}>
             <Eye className="size-4" />
-            {showPreview ? "隐藏图预览" : "Before / After 预览"}
+            {showPreview ? "隐藏图预览" : "已接受变更预览"}
           </Button>
-          <Button onClick={() => void doApply()} disabled={applying || acceptedCount === 0}>
+          <Button onClick={() => void doApply()} disabled={applying || reviewing || acceptedCount === 0}>
             {applying ? <Loader2 className="size-4 animate-spin" /> : <Rocket className="size-4" />}
             应用已接受的变更（{acceptedCount}）
           </Button>
@@ -261,9 +263,11 @@ function ReviewInner() {
               ? `被拦截：${applyResult.blocked.map((b) => `#${b.proposal_id} ${b.reason}`).join("；")}`
               : "变更已写入图谱，可在演化图谱中查看，节点详情可追溯本会话。"}
           </AlertDescription>
+          <div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm"><Link href={`/projects/${job.project_id}`}>查看更新后的研究记录</Link></Button><Button asChild size="sm" variant="outline"><Link href={`/projects/${job.project_id}/ideas/graph${applyResult.applied.find((p) => p.version_id)?.version_id ? `?node=${applyResult.applied.find((p) => p.version_id)?.version_id}` : ""}`}>在图谱中定位</Link></Button></div>
         </Alert>
       )}
 
+      {job.status !== "completed" && <div className="flex items-center gap-3 text-sm"><span>{job.status === "failed" ? "请返回对话页面重试分析。" : "分析仍在进行，完成后刷新查看提案。"}</span><Button variant="outline" onClick={() => void load()}>刷新状态</Button><Button asChild variant="ghost"><Link href={`/projects/${job.project_id}/conversations`}>返回导入讨论</Link></Button></div>}
       <div className="flex min-h-0 flex-1" ref={splitRowRef}>
         {/* left: original conversation (drag the divider to resize) */}
         <Card className="flex shrink-0 flex-col overflow-hidden" style={{ width: leftWidth }}>
@@ -344,6 +348,9 @@ function ReviewInner() {
                     proposal={proposal}
                     event={proposal.event_id ? eventById.get(proposal.event_id) : undefined}
                     onJump={jumpToMessage}
+                    messageLabels={Object.fromEntries(messages.map((m) => [m.id, m.sequence]))}
+                    dependencies={proposal.depends_on_proposal_ids.map((id) => proposals.find((p) => p.id === id)).filter((p): p is GraphChangeProposal => !!p)}
+                    busy={reviewing || applying}
                     onReview={review}
                     onEdit={() => setEditing(proposal)}
                   />
@@ -386,12 +393,18 @@ function ProposalCard({
   onJump,
   onReview,
   onEdit,
+  messageLabels,
+  dependencies,
+  busy,
 }: {
   proposal: GraphChangeProposal;
   event?: ResearchEventRead;
   onJump: (messageId: number) => void;
   onReview: (proposal: GraphChangeProposal, status: ReviewStatus) => void;
   onEdit: () => void;
+  messageLabels: Record<number, number>;
+  dependencies: GraphChangeProposal[];
+  busy: boolean;
 }) {
   const statusColor: Record<ReviewStatus, string> = {
     pending: "border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
@@ -445,6 +458,7 @@ function ProposalCard({
           {event.match_status === "needs_review" && " · ⚠ 未自动匹配到现有假设，请人工确认目标"}
         </p>
       )}
+      {dependencies.length > 0 && <p className="mt-2 text-xs text-muted-foreground">依赖提案：{dependencies.map((p) => `#${p.id} ${p.payload.title ?? ACTION_LABEL[p.action_type]}（${p.review_status === "applied" ? "已应用" : p.review_status === "accepted" ? "已接受" : p.review_status === "rejected" ? "已拒绝，应用将被拦截" : "需先审核"}）`).join("；")}</p>}
       {proposal.review_note && (
         <p className="mt-1 text-[11px] text-orange-600">系统备注：{proposal.review_note}</p>
       )}
@@ -458,14 +472,14 @@ function ProposalCard({
             onClick={() => onJump(messageId)}
             className="bg-muted hover:bg-accent rounded px-1.5 py-0.5 font-mono text-[10px] hover:underline"
           >
-            m{messageByIdLookupHint(messageId)}
+            m{messageLabels[messageId] ?? messageId}
             <ChevronRight className="inline size-2.5" />
           </button>
         ))}
       </div>
 
       {proposal.review_status !== "applied" && (
-        <div className="mt-3 flex gap-2">
+        <fieldset disabled={busy} className="mt-3 flex gap-2 disabled:opacity-50">
           <Button size="sm" variant="outline" className="h-7" onClick={onEdit}>
             编辑
           </Button>
@@ -477,86 +491,9 @@ function ProposalCard({
             <X className="size-3.5" />
             拒绝
           </Button>
-        </div>
+        </fieldset>
       )}
     </div>
-  );
-}
-
-function messageByIdLookupHint(id: number) {
-  return id; // display DB message id; the left panel anchors by sequence
-}
-
-function EditProposalDialog({
-  proposal,
-  onClose,
-  onSaved,
-}: {
-  proposal: GraphChangeProposal;
-  onClose: () => void;
-  onSaved: (proposal: GraphChangeProposal) => void;
-}) {
-  const payload = proposal.payload as Record<string, string | number | null>;
-  const [title, setTitle] = useState(String(payload.title ?? ""));
-  const [body, setBody] = useState(String(payload.body ?? payload.content ?? ""));
-  const [changeReason, setChangeReason] = useState(String(payload.change_reason ?? ""));
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      const fresh = await reviewProposal(proposal.id, {
-        edits: {
-          title: title.trim() || undefined,
-          body: body.trim() || undefined,
-          note_content: body.trim() || undefined,
-          change_reason: changeReason.trim() || undefined,
-        },
-      });
-      onSaved(fresh);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>编辑提案内容</DialogTitle>
-          <DialogDescription>
-            修改将以你确认后的内容写入图谱；来源消息保持可追溯。
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>标题</Label>
-            <Textarea value={title} onChange={(e) => setTitle(e.target.value)} rows={2} className="text-sm" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>{proposal.action_type === "add_research_note" || proposal.action_type === "add_open_question" ? "笔记内容" : "假设正文"}</Label>
-            <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} className="text-sm" />
-          </div>
-          {(payload.change_reason !== undefined || payload.body !== undefined) && (
-            <div className="space-y-1.5">
-              <Label>变更原因</Label>
-              <Textarea value={changeReason} onChange={(e) => setChangeReason(e.target.value)} rows={2} className="text-sm" />
-            </div>
-          )}
-          {error && <p className="text-sm text-red-600">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>取消</Button>
-          <Button onClick={() => void save()} disabled={saving || !title.trim()}>
-            {saving ? "保存中…" : "保存修改"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

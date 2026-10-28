@@ -1,16 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { ResearchNotes, isNextNote } from "@/components/research-notes";
+import { ProjectEditDialog } from "@/components/project-edit-dialog";
+import { useRouteId } from "@/lib/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { GitBranch, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -48,13 +48,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { fmtDateTime } from "@/lib/format";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/navigation";
+import { useProjectContext } from "@/components/project-context";
 
 export default function ProjectDetailPage() {
-  const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { refresh } = useProjectContext();
   const { toast } = useToast();
-  const projectId = Number(params.id);
+  const projectId = useRouteId();
+  const search = useSearchParams();
+  const selectedTab = ["ideas", "runs", "notes", "next"].includes(search.get("tab") ?? "") ? search.get("tab")! : "ideas";
 
   const [project, setProject] = useState<Project | null>(null);
   const [ideas, setIdeas] = useState<Idea[]>([]);
@@ -65,7 +68,6 @@ export default function ProjectDetailPage() {
 
   const load = useCallback(async () => {
     try {
-      setError(null);
       const [p, i, r, n] = await Promise.all([
         getProject(projectId),
         listIdeas(projectId),
@@ -76,6 +78,7 @@ export default function ProjectDetailPage() {
       setIdeas(i);
       setRuns(r);
       setNotes(n);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -84,6 +87,7 @@ export default function ProjectDetailPage() {
   }, [projectId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Async API loader; updates occur after the request settles.
     void load();
   }, [load]);
 
@@ -94,6 +98,7 @@ export default function ProjectDetailPage() {
     setDeleting(true);
     try {
       await deleteProject(projectId);
+      await refresh();
       toast("项目已删除", "success");
       router.push("/");
     } catch (err) {
@@ -102,7 +107,7 @@ export default function ProjectDetailPage() {
       setDeleting(false);
       setConfirmOpen(false);
     }
-  }, [projectId, router, toast]);
+  }, [projectId, router, toast, refresh]);
 
   if (loading) {
     return (
@@ -124,14 +129,15 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-6xl px-6 py-8">
       <div className="mb-6">
         <Link href="/" className="text-muted-foreground hover:text-foreground text-sm">
-          ← 全部项目
+          ← 研究总览
         </Link>
-        <div className="mt-2 flex items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
           <StatusBadge kind="project" value={project.status} />
+          <ProjectEditDialog key={project.updated_at} project={project} onSaved={load} />
           <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
             <DialogTrigger asChild>
               <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive h-7 px-2 text-xs">
@@ -161,14 +167,22 @@ export default function ProjectDetailPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="ideas">
+      <div className="mb-7 flex flex-wrap items-center gap-3 rounded-xl border bg-card px-5 py-4">
+        <span className="mr-auto text-sm text-muted-foreground">记录想法 → 安排实验 → 判断证据 → 继续研究</span>
+        <Button asChild size="sm"><Link href={`/projects/${projectId}/research-ideas`}>研究 Idea</Link></Button>
+        <Button asChild variant="outline" size="sm"><Link href={`/projects/${projectId}/conversations`}>导入讨论</Link></Button>
+        <Button asChild variant="outline" size="sm"><Link href={`/projects/${projectId}/analysis`}>AI 审核与历史</Link></Button>
+        <Button asChild variant="outline" size="sm"><Link href={`/projects/${projectId}/experiments`}>实验台与对比</Link></Button>
+      </div>
+      <Tabs value={selectedTab} onValueChange={(tab) => router.replace(`/projects/${projectId}?tab=${tab}`, { scroll: false })}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <TabsList>
             <TabsTrigger value="ideas">假设（{ideas.length}）</TabsTrigger>
             <TabsTrigger value="runs">实验（{runs.length}）</TabsTrigger>
-            <TabsTrigger value="notes">笔记（{notes.length}）</TabsTrigger>
+            <TabsTrigger value="notes">研究笔记</TabsTrigger>
+            <TabsTrigger value="next">下一步（{notes.filter((n) => isNextNote(n) && !n.is_done).length}）</TabsTrigger>
           </TabsList>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild>
               <Link href={`/projects/${projectId}/ideas/graph`}>
                 <GitBranch className="size-4" />
@@ -278,39 +292,8 @@ export default function ProjectDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="notes" className="mt-4">
-          {notes.length === 0 ? (
-            <EmptyHint text="还没有笔记。" />
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {notes.map((note) => (
-                <Card key={note.id}>
-                  <CardHeader>
-                    <CardTitle className="text-sm">{note.title}</CardTitle>
-                    <CardDescription>{fmtDateTime(note.created_at)}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {note.content && (
-                      <p className="text-sm whitespace-pre-wrap">{note.content}</p>
-                    )}
-                    <div className="text-muted-foreground flex gap-3 text-xs">
-                      {note.idea_id && (
-                        <Link href={`/ideas/${note.idea_id}`} className="hover:underline">
-                          → 假设 #{note.idea_id}
-                        </Link>
-                      )}
-                      {note.run_id && (
-                        <Link href={`/runs/${note.run_id}`} className="hover:underline">
-                          → 实验 #{note.run_id}
-                        </Link>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
+        <TabsContent value="notes" className="mt-4"><ResearchNotes notes={notes.filter((n) => !isNextNote(n))} onChanged={load} /></TabsContent>
+        <TabsContent value="next" className="mt-4 space-y-3"><NoteCreateDialog projectId={projectId} ideas={ideas} runs={runs} nextStep onCreated={load} /><ResearchNotes notes={notes.filter(isNextNote)} onChanged={load} /></TabsContent>
       </Tabs>
     </div>
   );

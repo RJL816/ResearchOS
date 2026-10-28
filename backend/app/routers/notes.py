@@ -31,6 +31,8 @@ def update_note(note_id: int, data: schemas.ResearchNoteUpdate, db: Session = De
         note.title = data.title
     if data.content is not None:
         note.content = data.content
+    if data.is_done is not None:
+        note.is_done = data.is_done
     db.commit()
     db.refresh(note)
     return note

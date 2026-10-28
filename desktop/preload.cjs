@@ -10,6 +10,13 @@ contextBridge.exposeInMainWorld("desktop", {
   version: process.env.DESKTOP_APP_VERSION ?? null,
   /** Manually trigger an update check; resolves to the result or null in dev. */
   checkForUpdates: () => ipcRenderer.invoke("desktop:check-for-updates"),
+  getUpdateStatus: () => ipcRenderer.invoke("desktop:get-update-status"),
+  onUpdateStatus: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on("desktop:update-status", listener);
+    return () => ipcRenderer.removeListener("desktop:update-status", listener);
+  },
+  installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   /** Subscribe to "update downloaded, restart to apply" notifications. */
   onUpdateDownloaded: (callback) => {
     const listener = (_event, version) => callback(version);

@@ -26,6 +26,7 @@ from .models import (
     MetricPoint,
     Project,
     ResearchNote,
+    ResearchIdea,
 )
 from .utils import utcnow
 
@@ -40,6 +41,7 @@ def get_object_or_404(db: Session, model, obj_id: int, label: str):
 # ---------------------------------------------------------------- ideas
 def create_idea_with_version(db: Session, project_id: int, data: schemas.IdeaCreate) -> Idea:
     get_object_or_404(db, Project, project_id, "Project")
+    validate_research_idea(db, project_id, data.research_idea_id)
     duplicate = db.scalar(
         select(Idea).where(Idea.project_id == project_id, Idea.title == data.title)
     )
@@ -48,7 +50,7 @@ def create_idea_with_version(db: Session, project_id: int, data: schemas.IdeaCre
             status_code=409,
             detail=f"Idea title already exists in this project: {data.title!r}",
         )
-    idea = Idea(project_id=project_id, title=data.title)
+    idea = Idea(project_id=project_id, title=data.title, research_idea_id=data.research_idea_id)
     db.add(idea)
     db.flush()
     version = IdeaVersion(
@@ -137,6 +139,8 @@ def upsert_run(db: Session, project_id: int, data: schemas.RunCreate) -> tuple[E
     """
     get_object_or_404(db, Project, project_id, "Project")
     external_key = data.external_key or f"{data.external_source}-{uuid.uuid4().hex[:12]}"
+    validate_run_target(db, project_id, data.target_version_id)
+    validate_research_idea(db, project_id, data.research_idea_id)
     run = db.scalar(
         select(ExperimentRun).where(
             ExperimentRun.project_id == project_id,
@@ -153,6 +157,10 @@ def upsert_run(db: Session, project_id: int, data: schemas.RunCreate) -> tuple[E
         )
         db.add(run)
     run.name = data.name
+    if created or "research_idea_id" in data.model_fields_set:
+        run.research_idea_id = data.research_idea_id
+    if created or "target_version_id" in data.model_fields_set:
+        run.target_version_id = data.target_version_id
     run.status = data.status
     run.git_commit = data.git_commit
     run.dataset = data.dataset
@@ -168,6 +176,20 @@ def upsert_run(db: Session, project_id: int, data: schemas.RunCreate) -> tuple[E
     db.commit()
     db.refresh(run)
     return run, created
+
+
+def validate_run_target(db: Session, project_id: int, version_id: int | None) -> None:
+    if version_id is not None:
+        version = get_object_or_404(db, IdeaVersion, version_id, "IdeaVersion")
+        if version.idea.project_id != project_id:
+            raise HTTPException(status_code=422, detail="实验验证目标必须属于当前项目")
+
+
+def validate_research_idea(db: Session, project_id: int, research_idea_id: int | None) -> None:
+    if research_idea_id is not None:
+        idea = get_object_or_404(db, ResearchIdea, research_idea_id, "ResearchIdea")
+        if idea.project_id != project_id:
+            raise HTTPException(status_code=422, detail="研究 Idea 必须属于当前项目")
 
 
 def upsert_metrics(

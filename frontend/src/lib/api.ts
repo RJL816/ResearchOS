@@ -113,6 +113,7 @@ export interface IdeaVersionDetail extends IdeaVersion {
 }
 
 export interface Idea {
+  research_idea_id: number | null;
   id: number;
   project_id: number;
   title: string;
@@ -139,6 +140,8 @@ export interface IdeaGraph {
 }
 
 export interface Run {
+  research_idea_id: number | null;
+  target_version_id: number | null;
   id: number;
   project_id: number;
   name: string;
@@ -194,6 +197,7 @@ export interface RunDetail extends Run {
 }
 
 export interface ResearchNote {
+  is_done: boolean;
   id: number;
   project_id: number;
   idea_id: number | null;
@@ -226,12 +230,12 @@ export const listIdeas = (projectId: number) =>
 
 export const createIdea = (
   projectId: number,
-  body: { title: string; body: string; change_reason?: string },
+  body: { title: string; body: string; change_reason?: string; research_idea_id?: number },
 ) => request<Idea>(`/api/projects/${projectId}/ideas`, { method: "POST", body: JSON.stringify(body) });
 
 export const getIdea = (id: number) => request<Idea>(`/api/ideas/${id}`);
 
-export const updateIdea = (id: number, body: { title?: string; status?: IdeaStatus }) =>
+export const updateIdea = (id: number, body: { title?: string; status?: IdeaStatus; research_idea_id?: number | null }) =>
   request<Idea>(`/api/ideas/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 
 export const addIdeaVersion = (ideaId: number, body: { body: string; change_reason?: string }) =>
@@ -257,10 +261,21 @@ export const createRun = (
     eval_protocol?: string;
     params?: Record<string, unknown>;
     notes?: string;
+    target_version_id?: number | null;
+    research_idea_id?: number | null;
   },
 ) => request<Run>(`/api/projects/${projectId}/runs`, { method: "POST", body: JSON.stringify(body) });
 
 export const getRun = (id: number) => request<RunDetail>(`/api/runs/${id}`);
+
+export const updateRun = (id: number, body: Partial<Pick<Run, "name" | "status" | "git_commit" | "dataset" | "eval_protocol" | "params" | "notes" | "started_at" | "finished_at" | "target_version_id" | "research_idea_id">>) =>
+  request<Run>(`/api/runs/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+
+export const addMetrics = (id: number, points: { name: string; step: number; value: number }[]) =>
+  request(`/api/runs/${id}/metrics`, { method: "POST", body: JSON.stringify({ points }) });
+
+export const updateNote = (id: number, body: { title?: string; content?: string; is_done?: boolean }) =>
+  request<ResearchNote>(`/api/notes/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 
 export const getRunMetrics = (id: number) =>
   request<{ run_id: number; series: MetricSeries[] }>(`/api/runs/${id}/metrics`);
@@ -450,6 +465,7 @@ export interface AnalysisJobSummary extends AnalysisJob {
   event_count: number;
   proposal_count: number;
   pending_count: number;
+  needs_revision_count: number;
   accepted_count: number;
   applied_count: number;
 }
@@ -578,6 +594,9 @@ export const startAnalysis = (conversationId: number) =>
 export const getAnalysisJob = (jobId: number) =>
   request<AnalysisJobSummary>(`/api/analysis-jobs/${jobId}`);
 
+export const listAnalysisJobs = (projectId: number) =>
+  request<AnalysisJobSummary[]>(`/api/projects/${projectId}/analysis-jobs`);
+
 export const getJobEvents = (jobId: number) =>
   request<ResearchEventRead[]>(`/api/analysis-jobs/${jobId}/events`);
 
@@ -597,6 +616,8 @@ export const reviewProposal = (
       relation?: EdgeRelation;
       status?: IdeaStatus;
       note_content?: string;
+      src_version_id?: number;
+      dst_version_id?: number;
     };
   },
 ) => request<GraphChangeProposal>(`/api/proposals/${proposalId}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -649,3 +670,35 @@ export const agentImport = (
     method: "POST",
     body: JSON.stringify(body),
   });
+
+export interface ModelSettings { configured: boolean; base_url: string; model: string; temporary: boolean }
+export const getModelSettings = () => request<ModelSettings>("/api/model-settings");
+export const setModelSettings = (body: { api_key: string; base_url: string; model: string }) => request<ModelSettings>("/api/model-settings", { method: "PUT", body: JSON.stringify(body) });
+export interface AgentParseResult {
+  records: Record<string, Record<string, unknown>[]>;
+  normalized: string;
+  segments: number;
+  masked_count: number;
+  preview: AgentImportResult;
+}
+export const parseAgentContent = (projectId: number, module: AgentPromptInfo["key"], content: string) =>
+  request<AgentParseResult>(`/api/projects/${projectId}/agent-import/parse`, { method: "POST", body: JSON.stringify({ module, content, dry_run: true }) });
+
+export type ResearchSections = { background: string | null; goal: string | null; methods: string | null; innovation: string | null; theory: string | null; results: string | null; conclusions: string | null; future_plan: string | null };
+export interface ResearchIdea extends ResearchSections { id: number; project_id: number; title: string }
+export interface ResearchDocument { id: number; filename: string; created_at: string; content?: string }
+export interface ResearchConclusion { id: number; run_id: number | null; content: string; created_at: string }
+export interface ProposalParse { source_hash: string; sections: ResearchSections; hypotheses: { title: string; body: string }[]; segments: number; masked_count: number }
+export const listResearchIdeas = (id: number) => request<ResearchIdea[]>(`/api/projects/${id}/research-ideas`);
+export const createResearchIdea = (id: number, title: string) => request<ResearchIdea>(`/api/projects/${id}/research-ideas`, { method: "POST", body: JSON.stringify({ title }) });
+export const getResearchIdea = (id: number) => request<ResearchIdea>(`/api/research-ideas/${id}`);
+export const updateResearchIdea = (id: number, body: Partial<ResearchIdea>) => request<ResearchIdea>(`/api/research-ideas/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+export const getResearchPrompt = () => request<{prompt: string}>("/api/research-idea-prompt");
+export const parseResearchDocument = (id: number, filename: string, content: string) => request<ProposalParse>(`/api/research-ideas/${id}/documents/parse`, { method: "POST", body: JSON.stringify({filename, content}) });
+export const saveResearchDocument = (id: number, filename: string, content: string, parsed: ProposalParse) => request<{id: number}>(`/api/research-ideas/${id}/documents`, { method: "POST", body: JSON.stringify({filename, content, sections: parsed.sections, hypotheses: parsed.hypotheses, source_hash: parsed.source_hash}) });
+export const listResearchDocuments = (id: number) => request<ResearchDocument[]>(`/api/research-ideas/${id}/documents`);
+export const getResearchDocument = (id: number, doc: number) => request<ResearchDocument>(`/api/research-ideas/${id}/documents/${doc}`);
+export const listResearchConclusions = (id: number) => request<ResearchConclusion[]>(`/api/research-ideas/${id}/conclusions`);
+export const addResearchConclusion = (id: number, content: string, run_id: number | null) => request<ResearchConclusion>(`/api/research-ideas/${id}/conclusions`, { method: "POST", body: JSON.stringify({content, run_id}) });
+
+export const deleteResearchConclusion = (id: number, conclusion: number) => request<void>(`/api/research-ideas/${id}/conclusions/${conclusion}`, { method: "DELETE" });

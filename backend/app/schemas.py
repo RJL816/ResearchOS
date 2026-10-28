@@ -53,6 +53,7 @@ class IdeaCreate(BaseModel):
     """Creating an idea immediately produces its immutable version 1."""
 
     title: str = Field(min_length=1, max_length=300)
+    research_idea_id: Optional[int] = None
     body: str = Field(min_length=1, max_length=50000)
     change_reason: Optional[str] = Field(default=None, max_length=2000)
 
@@ -61,6 +62,7 @@ class IdeaUpdate(BaseModel):
     # Only identity-level fields are mutable; the hypothesis body lives in versions.
     title: Optional[str] = Field(default=None, min_length=1, max_length=300)
     status: Optional[IdeaStatus] = None
+    research_idea_id: Optional[int] = None
 
 
 class IdeaVersionCreate(BaseModel):
@@ -100,6 +102,7 @@ class IdeaRead(BaseModel):
 
     id: int
     project_id: int
+    research_idea_id: Optional[int] = None
     title: str
     status: str
     current_version_id: Optional[int]
@@ -134,6 +137,8 @@ class IdeaGraph(BaseModel):
 
 # ---------------------------------------------------------------- runs
 class RunCreate(BaseModel):
+    research_idea_id: Optional[int] = None
+    target_version_id: Optional[int] = None
     name: str = Field(min_length=1, max_length=300)
     status: RunStatus = "running"
     external_source: str = Field(default="manual", min_length=1, max_length=50)
@@ -150,6 +155,8 @@ class RunCreate(BaseModel):
 
 
 class RunUpdate(BaseModel):
+    research_idea_id: Optional[int] = None
+    target_version_id: Optional[int] = None
     # external_source / external_key are the run identity: not updatable here.
     name: Optional[str] = Field(default=None, min_length=1, max_length=300)
     status: Optional[RunStatus] = None
@@ -163,6 +170,8 @@ class RunUpdate(BaseModel):
 
 
 class RunRead(BaseModel):
+    research_idea_id: Optional[int] = None
+    target_version_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -441,6 +450,8 @@ class ResearchEventRead(BaseModel):
 
 
 class ProposalPayloadEdit(BaseModel):
+    src_version_id: Optional[int] = None
+    dst_version_id: Optional[int] = None
     """User edits to a proposal before applying it. None fields stay unchanged."""
 
     title: Optional[str] = Field(default=None, min_length=1, max_length=300)
@@ -524,6 +535,7 @@ class AnalysisJobSummary(AnalysisJobRead):
     event_count: int = 0
     proposal_count: int = 0
     pending_count: int = 0
+    needs_revision_count: int = 0
     accepted_count: int = 0
     applied_count: int = 0
 
@@ -551,11 +563,13 @@ class ResearchNoteCreate(BaseModel):
 
 
 class ResearchNoteUpdate(BaseModel):
+    is_done: Optional[bool] = None
     title: Optional[str] = Field(default=None, min_length=1, max_length=300)
     content: Optional[str] = None
 
 
 class ResearchNoteRead(BaseModel):
+    is_done: bool = False
     model_config = ConfigDict(from_attributes=True)
 
     id: int

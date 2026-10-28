@@ -56,6 +56,7 @@ def job_summary(db: Session, job: AnalysisJob) -> schemas.AnalysisJobSummary:
     summary.event_count = len(job.events)
     summary.proposal_count = len(job.proposals)
     summary.pending_count = sum(1 for p in job.proposals if p.review_status == "pending")
+    summary.needs_revision_count = sum(1 for p in job.proposals if p.review_status == "needs_revision")
     summary.accepted_count = sum(1 for p in job.proposals if p.review_status == "accepted")
     summary.applied_count = sum(1 for p in job.proposals if p.review_status == "applied")
     return summary
@@ -276,7 +277,7 @@ def _patch_draft_refs(drafts: list[Any]) -> None:
 # Review (step 6)
 # ---------------------------------------------------------------------------
 
-REVIEWABLE_FIELDS = {"title", "body", "change_reason", "idea_id", "relation", "status", "content"}
+REVIEWABLE_FIELDS = {"title", "body", "change_reason", "idea_id", "relation", "status", "content", "src_version_id", "dst_version_id"}
 
 
 def review_proposal(
@@ -288,7 +289,19 @@ def review_proposal(
     payload = _payload_of(proposal)
     edits = review.edits.model_dump(exclude_none=True)
     if "target_idea_id" in edits:
-        payload["idea_id"] = edits.pop("target_idea_id")
+        target_id = edits.pop("target_idea_id")
+        target = services.get_object_or_404(db, Idea, target_id, "Idea")
+        if target.project_id != proposal.project_id:
+            raise HTTPException(status_code=422, detail="目标假设必须属于当前项目")
+        payload["idea_id"] = target_id
+        proposal.target_entity_id = target_id
+        proposal.baseline_version_id = target.current_version_id
+    for field in ("src_version_id", "dst_version_id"):
+        if field in edits:
+            from .models import IdeaVersion
+            version = services.get_object_or_404(db, IdeaVersion, edits[field], "IdeaVersion")
+            if version.idea.project_id != proposal.project_id:
+                raise HTTPException(status_code=422, detail="关系端点必须属于当前项目")
     if "note_content" in edits:
         payload["content"] = edits.pop("note_content")
     for key, value in edits.items():
@@ -531,6 +544,8 @@ def _apply_one(
         dst_version = db.get(IdeaVersion, dst)
         if src_version is None or dst_version is None:
             return {"status": "blocked", "reason": "边端点版本不存在，请重新审核"}
+        if src == dst or src_version.idea.project_id != proposal.project_id or dst_version.idea.project_id != proposal.project_id:
+            return {"status": "blocked", "reason": "关系不能连接自身或其他项目的版本"}
         if db.scalar(
             select(IdeaEdge).where(
                 IdeaEdge.src_version_id == src,

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useRouteId } from "@/lib/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -13,7 +13,7 @@ import {
   SkipForward,
   TriangleAlert,
 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription} from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +29,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/toast";
 import {
   agentImport,
+  parseAgentContent,
+  type AgentParseResult,
   getAgentPrompts,
   type AgentImportItem,
   type AgentImportResult,
@@ -45,8 +47,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 export default function AgentImportView() {
-  const params = useParams<{ id: string }>();
-  const projectId = Number(params.id);
+  const projectId = useRouteId();
   const { toast } = useToast();
 
   const [prompts, setPrompts] = useState<AgentPromptInfo[] | null>(null);
@@ -56,6 +57,8 @@ export default function AgentImportView() {
   const [content, setContent] = useState("");
   const [preview, setPreview] = useState<AgentImportResult | null>(null);
   const [result, setResult] = useState<AgentImportResult | null>(null);
+  const [previewInput, setPreviewInput] = useState("");
+  const [parsed, setParsed] = useState<AgentParseResult | null>(null);
   const [working, setWorking] = useState(false);
 
   useEffect(() => {
@@ -70,30 +73,38 @@ export default function AgentImportView() {
     if (!active) return;
     try {
       await navigator.clipboard.writeText(active.prompt);
-      toast("Prompt 已复制，粘贴给你的 AI 助手即可", "success");
+      toast("提示词已复制，粘贴给你的 AI 助手即可", "success");
     } catch {
       toast("复制失败，请手动全选复制", "warning");
     }
   }, [active, toast]);
 
   const runImport = useCallback(
-    async (dryRun: boolean) => {
-      if (!content.trim()) return;
+    async (dryRun: boolean, autoImport = false) => {
+      if (!content.trim() || (!dryRun && previewInput !== `${projectId}:${activeKey}:${content}`)) return;
       setWorking(true);
       setError(null);
       try {
-        const result = await agentImport(projectId, {
-          module: activeKey,
-          content,
-          dry_run: dryRun,
-        });
         if (dryRun) {
-          setPreview(result);
+          const parsedResult = await parseAgentContent(projectId, activeKey, content);
+          setParsed(parsedResult);
+          setPreview(parsedResult.preview);
+          setPreviewInput(`${projectId}:${activeKey}:${content}`);
           setResult(null);
+          const hasRecords = Object.entries(parsedResult.records).some(([key, value]) => key !== "version" && Array.isArray(value) && value.length > 0);
+          if (autoImport && parsedResult.preview.ok && hasRecords) {
+            const imported = await agentImport(projectId, { module: activeKey, content: parsedResult.normalized, dry_run: false });
+            setResult(imported);
+            setPreview(null);
+            if (imported.ok) setContent("");
+            toast(imported.ok ? `解析并导入完成：${imported.created.length} 项创建` : `部分导入失败：${imported.errors.length} 项，请查看结果`, imported.ok ? "success" : "warning");
+          }
         } else {
+          if (!parsed) return;
+          const result = await agentImport(projectId, { module: activeKey, content: parsed.normalized, dry_run: false });
           setResult(result);
           setPreview(null);
-          setContent("");
+          if (result.ok) setContent("");
           toast(
             result.ok
               ? `导入完成：${result.created.length} 项创建`
@@ -107,11 +118,11 @@ export default function AgentImportView() {
         setWorking(false);
       }
     },
-    [projectId, activeKey, content, toast],
+    [projectId, activeKey, content, toast, previewInput, parsed],
   );
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5 px-6 py-6">
+    <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
       <div>
         <Link
           href={`/projects/${projectId}`}
@@ -122,11 +133,11 @@ export default function AgentImportView() {
         </Link>
         <h1 className="mt-1 flex items-center gap-2 text-page-title">
           <Bot className="text-primary size-5" />
-          Agent 结构化导入
+          从 AI 助手整理研究记录
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          复制模块 Prompt → 粘贴给你的 AI 助手（GLM / Claude 等）→ 把助手输出的 JSON 粘回来 → 预览确认后导入。
-          与「对话导入」互相独立，已有导入方式全部保留。
+          复制提示词给正在聊天的 AI 助手 → 把它整理的内容粘贴回来 → 用本软件的模型分段解析 → 预览确认后导入。
+          适合已有助手整理好的记录；原始讨论请使用「对话导入」。
         </p>
       </div>
 
@@ -137,22 +148,23 @@ export default function AgentImportView() {
         </Alert>
       )}
 
+      <div className="rounded-lg border bg-card p-4 text-sm">整理完整研究 Idea 或导入方案 Markdown？ <Link className="text-primary underline" href={`/projects/${projectId}/research-ideas`}>进入研究 Idea 工作区</Link></div>
       {/* step 1: pick module + copy prompt */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-card-title">第一步：选择模块并复制 Prompt</CardTitle>
+          <CardTitle className="text-card-title">01 选择整理方式</CardTitle>
           <CardDescription>
-            每个模块一个专门调教的 Prompt；助手会按 Research OS 的数据契约输出严格 JSON。
+            选择类型，复制固定提示词，直接发送给正在与你讨论研究的助手。
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!prompts ? (
-            <Skeleton className="h-40 w-full" />
+            error ? <p className="text-sm text-destructive">无法加载提示词，请检查服务连接后刷新页面。</p> : <Skeleton className="h-40 w-full" />
           ) : (
-            <Tabs value={activeKey} onValueChange={(v) => setActiveKey(v as AgentPromptInfo["key"])}>
-              <TabsList className="flex-wrap">
+            <Tabs value={activeKey} onValueChange={(v) => { setActiveKey(v as AgentPromptInfo["key"]); setPreview(null); setParsed(null); setResult(null); }}>
+              <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1">
                 {prompts.map((p) => (
-                  <TabsTrigger key={p.key} value={p.key} className="px-3">
+                  <TabsTrigger key={p.key} value={p.key} disabled={working} className="px-3">
                     {p.name}
                   </TabsTrigger>
                 ))}
@@ -160,14 +172,14 @@ export default function AgentImportView() {
               {prompts.map((p) => (
                 <TabsContent key={p.key} value={p.key} className="mt-3 space-y-3">
                   <p className="text-muted-foreground text-xs leading-relaxed">{p.description}</p>
-                  <div className="bg-muted/50 border-border-subtle max-h-72 overflow-y-auto rounded-lg border p-3">
-                    <pre className="text-muted-foreground whitespace-pre-wrap font-mono text-[11px] leading-relaxed">
+                  <div className="bg-muted/50 border-border-subtle max-h-80 overflow-y-auto rounded-lg border p-4">
+                    <pre className="text-muted-foreground whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">
                       {p.prompt}
                     </pre>
                   </div>
                   <Button size="sm" onClick={() => void copyPrompt()}>
                     <ClipboardCopy className="size-3.5" />
-                    复制「{p.name}」Prompt
+                    复制「{p.name}」提示词
                   </Button>
                 </TabsContent>
               ))}
@@ -179,25 +191,30 @@ export default function AgentImportView() {
       {/* step 2: paste agent output */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-card-title">第二步：粘贴助手的 JSON 输出</CardTitle>
+          <CardTitle className="text-card-title">02 粘贴助手的整理结果</CardTitle>
           <CardDescription>
-            支持直接粘贴或带 markdown 围栏；系统会自动提取 JSON 并逐条校验。
+            粘贴助手的自然语言或结构化整理结果。系统将发送给你配置的模型，按所选类型分段解析；可直接解析并自动导入，或先预览。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Textarea
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={(e) => { setContent(e.target.value); setPreview(null); setParsed(null); setResult(null); }}
+            disabled={working}
             rows={10}
-            placeholder={'{"version":1,"ideas":[{"ref":"idea-a","title":"…","body":"…"}],"runs":[],"evidence":[],"notes":[]}'}
-            className="font-mono text-xs"
+            placeholder="把助手整理好的研究内容粘贴在这里…"
+            aria-label="助手的整理结果"
+            className="text-sm"
           />
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => void runImport(true)} disabled={working || !content.trim()}>
               {working ? <Loader2 className="size-4 animate-spin" /> : <Bot className="size-4" />}
-              解析并预览
+              {working ? "正在分段解析…" : "模型解析并预览"}
             </Button>
-            <Button onClick={() => void runImport(false)} disabled={working || !content.trim() || !preview}>
+            <Button onClick={() => void runImport(true, true)} disabled={working || !content.trim()}>
+              解析并自动导入
+            </Button>
+            <Button variant="outline" onClick={() => void runImport(false)} disabled={working || !content.trim() || !preview || !preview.ok || !parsed || Object.entries(parsed.records).filter(([key]) => key !== "version").every(([, value]) => !Array.isArray(value) || value.length === 0) || previewInput !== `${projectId}:${activeKey}:${content}`}>
               确认导入
             </Button>
             {(preview || result) && (
@@ -214,13 +231,16 @@ export default function AgentImportView() {
             )}
           </div>
           {!preview && !result && (
-            <p className="text-muted-foreground text-[11px]">
-              建议先「解析并预览」确认无误后再「确认导入」；导入是逐条应用的，单条失败不影响其余条目。
+            <p className="text-muted-foreground text-xs">
+              解析需要先在设置中配置模型 API。自动导入会在解析和校验成功后写入；有错误时会停在预览。
             </p>
           )}
         </CardContent>
       </Card>
 
+      {!preview && !result && <p className="text-sm text-muted-foreground">尚未配置模型？<Link href="/settings" className="text-primary underline">前往设置模型 API</Link></p>}
+      {parsed && (preview || result) && <Card><CardHeader><CardTitle className="text-card-title">03 解析内容</CardTitle><CardDescription>共解析 {parsed.segments} 段{parsed.masked_count > 0 ? `，已遮蔽 ${parsed.masked_count} 处疑似密钥` : ""}。{result ? "已提交导入，请核对记录。" : "请逐项检查再确认导入。"}</CardDescription></CardHeader><CardContent className="space-y-4">{Object.entries({ideas:"假设", idea_versions:"假设修订", runs:"实验", evidence:"证据", notes:"笔记与下一步"}).map(([key, label]) => { const items = parsed.records[key] ?? []; return items.length ? <section key={key} className="rounded-lg border p-4"><h3 className="font-semibold">{label} · {items.length}</h3><div className="mt-3 space-y-3">{items.map((item, index) => <div key={index} className="rounded-md bg-muted/50 p-3"><p className="font-medium">{String(item.title ?? item.name ?? item.idea ?? `记录 ${index + 1}`)}</p><dl className="mt-2 space-y-1 text-sm text-muted-foreground">{Object.entries(item).filter(([field]) => !["ref", "title", "name"].includes(field)).map(([field, value]) => <div key={field} className="flex gap-2"><dt className="shrink-0 font-medium">{({ body: "正文", content: "内容", change_reason: "修订原因", status: "状态", idea: "关联假设", run: "关联实验", verdict: "判断", note: "依据", notes: "说明", dataset: "数据集", params: "参数", metrics: "指标", git_commit: "代码版本", eval_protocol: "评估方式" } as Record<string, string>)[field] ?? field}：</dt><dd className="min-w-0 whitespace-pre-wrap break-words">{typeof value === "object" ? JSON.stringify(value, null, 2) : String(value)}</dd></div>)}</dl></div>)}</div></section> : null; })}</CardContent></Card>}
+      {result && <Button asChild><Link href={`/projects/${projectId}`}>查看导入后的研究记录</Link></Button>}
       {/* step 3: preview / result */}
       {(preview || result) && (() => {
         const data = (preview ?? result) as AgentImportResult;
@@ -234,19 +254,19 @@ export default function AgentImportView() {
                   {data.ok ? "全部可导入" : `${data.errors.length} 项失败`}
                 </Badge>
               </CardTitle>
-              <span className="text-muted-foreground font-mono text-[10px]">prompt {data.prompt_version}</span>
+              <span className="text-muted-foreground font-mono text-xs">prompt {data.prompt_version}</span>
             </CardHeader>
             <CardContent className="space-y-4">
               {data.created.length > 0 && (
                 <ItemList
-                  title={`将创建 / 已创建（${data.created.length}）`}
+                  title={`新建（${data.created.length}）`}
                   items={data.created}
                   icon={<CheckCircle2 className="text-success size-3.5" />}
                 />
               )}
               {data.skipped.length > 0 && (
                 <ItemList
-                  title={`跳过（${data.skipped.length}）`}
+                  title={`更新或跳过（${data.skipped.length}）`}
                   items={data.skipped}
                   icon={<SkipForward className="text-muted-foreground size-3.5" />}
                 />
@@ -285,7 +305,7 @@ function ItemList({
             className="bg-muted/40 flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-xs"
           >
             {icon}
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-xs">
               {KIND_LABEL[item.kind] ?? item.kind}
             </Badge>
             <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>

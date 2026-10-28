@@ -2,7 +2,8 @@
 
 import "@xyflow/react/dist/style.css";
 import Link from "next/link";
-import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useRouteId, usePathname, useRouter } from "@/lib/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -28,6 +29,7 @@ import { getProject, getProjectIdeaGraph, getProposalSummary, type GraphEdge, ty
 import { ResizeHandle, usePanelWidth, clampPanelWidth } from "@/components/resize-handle";
 import { fmtDateTime } from "@/lib/format";
 import { GraphToolbar } from "./GraphToolbar";
+import { IdeaCreateDialog } from "@/components/idea-create-dialog";
 import { IdeaEdge } from "./IdeaEdge";
 import { IdeaNode } from "./IdeaNode";
 import { IdeaDetailPanel } from "./IdeaDetailPanel";
@@ -75,8 +77,7 @@ export function IdeaGraphView() {
 }
 
 function IdeaGraphInner() {
-  const params = useParams<{ id: string }>();
-  const projectId = Number(params.id);
+  const projectId = useRouteId();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -94,8 +95,7 @@ function IdeaGraphInner() {
   const [search, setSearch] = useState("");
   const [showMinimap, setShowMinimap] = useState(true);
   const [selection, setSelection] = useState<GraphSelection>(null);
-  const [cycleEdges, setCycleEdges] = useState(0);
-  const [fitNonce, setFitNonce] = useState(0);
+  const cycleEdges = useMemo(() => detectCycleEdges(graph?.edges ?? []), [graph]);
   const [resetNonce, setResetNonce] = useState(0);
   const [matchCursor, setMatchCursor] = useState(0);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
@@ -106,12 +106,10 @@ function IdeaGraphInner() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<IdeaFlowEdge>([]);
   const { fitView, setCenter } = useReactFlow();
   const nodesRef = useRef(nodes);
-  nodesRef.current = nodes;
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
 
   const load = useCallback(async () => {
     try {
-      setLoading(true);
-      setLoadError(null);
       const [projectData, graphData] = await Promise.all([
         getProject(projectId),
         getProjectIdeaGraph(projectId),
@@ -121,6 +119,7 @@ function IdeaGraphInner() {
       getProposalSummary(projectId)
         .then(setProposalSummary)
         .catch(() => setProposalSummary(null));
+      setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -129,6 +128,7 @@ function IdeaGraphInner() {
   }, [projectId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Async API loader; updates occur after the request settles.
     void load();
   }, [load]);
 
@@ -155,27 +155,17 @@ function IdeaGraphInner() {
     const laid = layoutIdeaGraph(visibleNodes, visibleEdges, direction);
     setNodes(laid.nodes);
     setEdges(laid.edges);
-    setCycleEdges(detectCycleEdges(graph.edges));
-    setFitNonce((nonce) => nonce + 1);
-  }, [graph, visibleNodes, visibleEdges, direction, resetNonce, setNodes, setEdges]);
+    const frame = requestAnimationFrame(() => { void fitView({ padding: 0.18, duration: 400 }); });
+    return () => cancelAnimationFrame(frame);
+  }, [graph, visibleNodes, visibleEdges, direction, resetNonce, setNodes, setEdges, fitView]);
 
+  const initialNode = Number(searchParams.get("node"));
   useEffect(() => {
-    if (fitNonce === 0) return;
-    requestAnimationFrame(() => {
-      void fitView({ padding: 0.18, duration: 400 });
-    });
-  }, [fitNonce, fitView]);
-
-  /* ----------------------------- selection ------------------------------ */
-
-  // Restore selection from ?node=… once real data is available (refresh-safe).
-  useEffect(() => {
-    if (!graph || selection !== null) return;
-    const nodeParam = Number(searchParams.get("node"));
-    if (nodeParam && graph.nodes.some((node) => node.id === nodeParam)) {
-      setSelection({ type: "node", id: nodeParam });
-    }
-  }, [graph, searchParams, selection]);
+    if (!graph || selection !== null || !graph.nodes.some((node) => node.id === initialNode)) return;
+    // Defer selection until React Flow has committed the laid out nodes.
+    const frame = requestAnimationFrame(() => setSelection({ type: "node", id: initialNode }));
+    return () => cancelAnimationFrame(frame);
+  }, [graph, initialNode, selection]);
 
   const focusNode = useCallback(
     (id: number) => {
@@ -220,13 +210,13 @@ function IdeaGraphInner() {
   const query = search.trim().toLowerCase();
   const matchIds = useMemo(() => {
     if (!query || !graph) return [] as number[];
-    return graph.nodes
+    return visibleNodes
       .filter(
         (node) =>
           node.title.toLowerCase().includes(query) || node.summary.toLowerCase().includes(query),
       )
       .map((node) => node.id);
-  }, [graph, query]);
+  }, [graph, visibleNodes, query]);
   const matchIdSet = useMemo(() => new Set(matchIds), [matchIds]);
 
   const locateNext = useCallback(() => {
@@ -366,6 +356,7 @@ function IdeaGraphInner() {
       versionId={selection.id}
       onClose={deselect}
       onSelectNode={selectFromPanel}
+      onChanged={load}
     />
   ) : (
     <EdgeDetailCard
@@ -382,7 +373,7 @@ function IdeaGraphInner() {
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
         <h1 className="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight">
           <GitBranch className="text-primary size-4" />
-          Idea 演化图谱
+          假设演化图谱
         </h1>
         <GraphToolbar
           direction={direction}
@@ -391,7 +382,7 @@ function IdeaGraphInner() {
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
           search={search}
-          onSearchChange={setSearch}
+          onSearchChange={(value) => { setSearch(value); setMatchCursor(0); }}
           matchCount={matchIds.length}
           onLocateNext={locateNext}
           minimap={showMinimap}
@@ -402,6 +393,7 @@ function IdeaGraphInner() {
           totalCount={graph.nodes.length}
         />
         <div className="ml-auto flex items-center gap-2">
+          <IdeaCreateDialog projectId={projectId} onCreated={load} />
           {proposalSummary && proposalSummary.total_count > 0 && (
             <Button
               asChild
@@ -411,9 +403,7 @@ function IdeaGraphInner() {
             >
               <Link
                 href={
-                  proposalSummary.latest_job_id
-                    ? `/analysis/${proposalSummary.latest_job_id}`
-                    : `/projects/${projectId}/conversations`
+                  `/projects/${projectId}/analysis`
                 }
               >
                 <Sparkles className="size-3.5" />

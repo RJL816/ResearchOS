@@ -70,6 +70,22 @@ class GlmClient:
         return content
 
 
+_runtime_config: dict[str, str] = {}
+
+
+def configure_runtime_model(api_key: str, base_url: str, model: str) -> None:
+    _runtime_config.clear()
+    _runtime_config.update(api_key=api_key, base_url=base_url, model=model)
+
+
+def runtime_model_status() -> dict:
+    settings = get_settings()
+    return {"configured": bool(_runtime_config.get("api_key") or settings.glm_api_key),
+            "base_url": _runtime_config.get("base_url") or settings.glm_base_url,
+            "model": _runtime_config.get("model") or settings.glm_model,
+            "temporary": bool(_runtime_config)}
+
+
 def get_glm_client() -> GlmClient:
     """Factory hook; tests monkeypatch this to inject a mock client."""
-    return GlmClient()
+    return GlmClient(**_runtime_config)

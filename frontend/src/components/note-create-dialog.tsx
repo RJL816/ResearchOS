@@ -29,17 +29,23 @@ export function NoteCreateDialog({
   ideas,
   runs,
   onCreated,
+  initialIdeaId,
+  initialRunId,
+  nextStep = false,
 }: {
   projectId: number;
   ideas: Idea[];
   runs: Run[];
   onCreated: () => void;
+  initialIdeaId?: number;
+  initialRunId?: number;
+  nextStep?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [ideaId, setIdeaId] = useState<string>("none");
-  const [runId, setRunId] = useState<string>("none");
+  const [ideaId, setIdeaId] = useState<string>(String(initialIdeaId ?? "none"));
+  const [runId, setRunId] = useState<string>(String(initialRunId ?? "none"));
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -49,7 +55,7 @@ export function NoteCreateDialog({
     setError(null);
     try {
       await createNote(projectId, {
-        title: title.trim(),
+        title: nextStep ? `Next: ${title.trim()}` : title.trim(),
         content: content.trim() || undefined,
         idea_id: ideaId !== "none" ? Number(ideaId) : undefined,
         run_id: runId !== "none" ? Number(runId) : undefined,
@@ -57,8 +63,8 @@ export function NoteCreateDialog({
       setOpen(false);
       setTitle("");
       setContent("");
-      setIdeaId("none");
-      setRunId("none");
+      setIdeaId(String(initialIdeaId ?? "none"));
+      setRunId(String(initialRunId ?? "none"));
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -72,7 +78,7 @@ export function NoteCreateDialog({
       <DialogTrigger asChild>
         <Button variant="outline">
           <Plus className="size-4" />
-          写笔记
+          {nextStep ? "记录下一步" : "写笔记"}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">

@@ -30,6 +30,9 @@ def get_idea(idea_id: int, db: Session = Depends(get_db)):
 @router.patch("/ideas/{idea_id}", response_model=schemas.IdeaRead)
 def update_idea(idea_id: int, data: schemas.IdeaUpdate, db: Session = Depends(get_db)):
     idea = services.get_object_or_404(db, Idea, idea_id, "Idea")
+    if "research_idea_id" in data.model_fields_set:
+        services.validate_research_idea(db, idea.project_id, data.research_idea_id)
+        idea.research_idea_id = data.research_idea_id
     if data.title is not None and data.title != idea.title:
         duplicate = db.scalar(
             select(Idea).where(

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname } from "@/lib/navigation";
 import { ChevronRight, Moon, Search, Sun } from "lucide-react";
 import { SidebarMobileTrigger } from "@/components/app-sidebar";
 import { useProjectContext } from "@/components/project-context";
@@ -9,6 +9,7 @@ import { useTheme } from "@/components/theme";
 import { Button } from "@/components/ui/button";
 
 const SEGMENT_LABELS: Record<string, string> = {
+  "research-ideas": "研究 Idea",
   experiments: "实验",
   compare: "对比",
   ideas: "假设",
@@ -86,35 +87,14 @@ function buildCrumbs(pathname: string, projectId: number | null, projectName: st
   const crumbs: Crumb[] = [{ label: "Research OS", href: "/" }];
   if (pathname === "/") return crumbs;
 
-  // /analysis/{jobId} lives outside /projects — resolve its project for order.
-  const analysisMatch = pathname.match(/^\/analysis\/(\d+)/);
-  if (analysisMatch) {
-    if (projectId !== null) {
-      crumbs.push({
-        label: projectName ?? `项目 #${projectId}`,
-        href: `/projects/${projectId}/conversations`,
-      });
-    }
-    crumbs.push({ label: "AI 审核", href: null });
-    return crumbs;
+  if (projectId !== null) crumbs.push({ label: projectName ?? `项目 #${projectId}`, href: `/projects/${projectId}` });
+  const parts = pathname.split("/").filter(Boolean);
+  if (["ideas", "runs", "analysis", "research-ideas"].includes(parts[0])) {
+    crumbs.push({ label: SEGMENT_LABELS[parts[0]], href: null });
+  } else {
+    const tail = parts[0] === "projects" ? parts.slice(2) : parts;
+    if (tail.length) crumbs.push({ label: tail.map((p) => SEGMENT_LABELS[p] ?? p).join(" · "), href: null });
+    else if (parts[0] === "projects") crumbs.push({ label: "项目工作台", href: null });
   }
-
-  const segments = pathname.split("/").filter(Boolean);
-  let path = "";
-  for (const segment of segments) {
-    path += `/${segment}`;
-    if (segment === "projects") continue;
-    if (/^\d+$/.test(segment)) {
-      crumbs.push({ label: projectName ?? `项目 #${segment}`, href: `/projects/${segment}` });
-      continue;
-    }
-    const nextIsId = /^\d+$/.test(segments[segments.indexOf(segment) + 1] ?? "");
-    if (SEGMENT_LABELS[segment]) {
-      crumbs.push({
-        label: SEGMENT_LABELS[segment],
-        href: nextIsId ? null : path,
-      });
-    }
-  }
-  return crumbs.map((c) => ({ ...c, href: c.href ?? null }));
+  return crumbs;
 }

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useRouteId } from "@/lib/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Scale } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,9 +27,8 @@ interface Loaded {
 }
 
 export default function CompareView() {
-  const params = useParams<{ id: string }>();
   const search = useSearchParams();
-  const projectId = Number(params.id);
+  const projectId = useRouteId();
   const runIds = useMemo(
     () =>
       (search.get("runs") ?? "")
@@ -45,17 +45,18 @@ export default function CompareView() {
 
   const load = useCallback(async () => {
     try {
-      setError(null);
       const results = await Promise.all(
         runIds.map(async (id) => ({ run: await getRun(id), metrics: (await getRunMetrics(id)).series })),
       );
       setLoaded(results);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [runIds]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Async API loader; updates occur after the request settles.
     void load();
   }, [load]);
 
@@ -197,6 +198,8 @@ export default function CompareView() {
             <div className="space-y-4">
               {commonMetrics.map((metricName) => {
                 const hiddenSet = hidden[metricName] ?? new Set<number>();
+                const points = loaded.flatMap((l) => l.metrics.find((s) => s.name === metricName)?.points ?? []);
+                const domain = { min: Math.min(...points.map((p) => p.value)), max: Math.max(...points.map((p) => p.value)), start: Math.min(...points.map((p) => p.step)), end: Math.max(...points.map((p) => p.step)) };
                 return (
                   <Card key={metricName} className="p-4">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -232,7 +235,7 @@ export default function CompareView() {
                               #{l.run.id}
                             </span>
                             <div className="min-w-0 flex-1">
-                              <MetricChart points={series.points} />
+                              <MetricChart points={series.points} domain={domain} color={SERIES_COLORS[index % SERIES_COLORS.length]} />
                             </div>
                           </div>
                         );

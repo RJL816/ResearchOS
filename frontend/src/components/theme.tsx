@@ -5,7 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -30,35 +30,33 @@ function applyTheme(theme: Theme): "light" | "dark" {
   return resolved;
 }
 
+function readTheme(): Theme {
+  const value = localStorage.getItem(STORAGE_KEY);
+  return value === "light" || value === "dark" ? value : "system";
+}
+function themeSnapshot() {
+  const theme = readTheme();
+  const resolved = theme === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : theme;
+  return `${theme}:${resolved}`;
+}
+function subscribeTheme(notify: () => void) {
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  const update = () => { applyTheme(readTheme()); notify(); };
+  media.addEventListener("change", update);
+  window.addEventListener("storage", update);
+  window.addEventListener("research-theme", update);
+  return () => { media.removeEventListener("change", update); window.removeEventListener("storage", update); window.removeEventListener("research-theme", update); };
+}
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system");
-  const [resolved, setResolved] = useState<"light" | "dark">("light");
-
-  useEffect(() => {
-    const stored = (localStorage.getItem(STORAGE_KEY) as Theme | null) ?? "system";
-    setThemeState(stored);
-    setResolved(applyTheme(stored));
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => {
-      if ((localStorage.getItem(STORAGE_KEY) as Theme | null) ?? "system") {
-        setResolved(applyTheme("system"));
-      }
-    };
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
-  }, []);
-
+  const snapshot = useSyncExternalStore(subscribeTheme, themeSnapshot, () => "system:light");
+  const [theme, resolved] = snapshot.split(":") as [Theme, "light" | "dark"];
+  useEffect(() => { applyTheme(theme); }, [theme]);
   const setTheme = useCallback((next: Theme) => {
     localStorage.setItem(STORAGE_KEY, next);
-    setThemeState(next);
-    setResolved(applyTheme(next));
+    applyTheme(next);
+    window.dispatchEvent(new Event("research-theme"));
   }, []);
-
-  return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolved }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={{ theme, setTheme, resolved }}>{children}</ThemeContext.Provider>;
 }
 
 export const useTheme = () => useContext(ThemeContext);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useRouteId } from "@/lib/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, GitBranch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -18,22 +18,31 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
 import { AddVersionDialog } from "@/components/add-version-dialog";
 import { EvidenceLinkDialog } from "@/components/evidence-link-dialog";
-import { getIdeaGraph, type IdeaGraph } from "@/lib/api";
+import { getIdeaGraph, listNotes, listRuns, type IdeaGraph, type ResearchNote, type Run } from "@/lib/api";
+import { RunCreateDialog } from "@/components/run-create-dialog";
+import { NoteCreateDialog } from "@/components/note-create-dialog";
+import { ResearchNotes, isNextNote } from "@/components/research-notes";
+import { IdeaStatusSelect } from "@/components/idea-status-select";
 import { fmtDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export default function IdeaDetailPage() {
-  const params = useParams<{ id: string }>();
-  const ideaId = Number(params.id);
+  const ideaId = useRouteId();
 
   const [graph, setGraph] = useState<IdeaGraph | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notes, setNotes] = useState<ResearchNote[]>([]);
+  const [runs, setRuns] = useState<Run[]>([]);
 
   const load = useCallback(async () => {
     try {
+      const data = await getIdeaGraph(ideaId);
+      const [allNotes, allRuns] = await Promise.all([listNotes(data.idea.project_id), listRuns(data.idea.project_id)]);
+      setGraph(data);
+      setNotes(allNotes.filter((n) => n.idea_id === ideaId));
+      setRuns(allRuns);
       setError(null);
-      setGraph(await getIdeaGraph(ideaId));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -42,6 +51,7 @@ export default function IdeaDetailPage() {
   }, [ideaId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Async API loader; updates occur after the request settles.
     void load();
   }, [load]);
 
@@ -74,7 +84,7 @@ export default function IdeaDetailPage() {
   const evidenceCount = versions.reduce((sum, v) => sum + v.evidence.length, 0);
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-4xl p-6">
       <div className="mb-6">
         <Link
           href={`/projects/${idea.project_id}`}
@@ -82,20 +92,24 @@ export default function IdeaDetailPage() {
         >
           ← 返回项目
         </Link>
+        {idea.research_idea_id && <Link className="ml-4 text-sm text-primary underline" href={`/research-ideas/${idea.research_idea_id}`}>查看所属研究 Idea</Link>}
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{idea.title}</h1>
-          <StatusBadge kind="idea" value={idea.status} />
+          <IdeaStatusSelect ideaId={idea.id} status={idea.status} onChanged={load} />
         </div>
         <p className="text-muted-foreground mt-1 text-sm">
           创建于 {fmtDateTime(idea.created_at)} · 更新于 {fmtDateTime(idea.updated_at)} ·{" "}
           {versions.length} 个版本 · {evidenceCount} 条证据
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
+          <RunCreateDialog projectId={idea.project_id} researchIdeaId={idea.research_idea_id ?? undefined} initialVersionId={idea.current_version_id ?? undefined} onCreated={load} />
           <AddVersionDialog
             ideaId={idea.id}
             nextVersionNumber={nextVersionNumber}
             onCreated={load}
+            currentBody={versions.find((v) => v.id === idea.current_version_id)?.body}
           />
+          <NoteCreateDialog projectId={idea.project_id} ideas={[idea]} runs={runs} initialIdeaId={idea.id} nextStep onCreated={load} />
           <EvidenceLinkDialog
             mode="version"
             idea={idea}
@@ -117,6 +131,11 @@ export default function IdeaDetailPage() {
         </div>
       </div>
 
+      <Card className="mb-6"><CardHeader><CardTitle className="text-base">验证进展与下一步</CardTitle><CardDescription>实验计划关联验证目标；完成实验后再记录证据判断，状态由你确认。</CardDescription></CardHeader><CardContent className="space-y-4">
+        {runs.filter((r) => versions.some((v) => v.id === r.target_version_id)).map((r) => <Link key={r.id} href={`/runs/${r.id}`} className="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-accent"><span>{r.name} · v{versions.find((v) => v.id === r.target_version_id)?.version_number}</span><StatusBadge kind="run" value={r.status} /></Link>)}
+        <ResearchNotes notes={notes.filter(isNextNote)} onChanged={load} />
+      </CardContent></Card>
+      <Card className="mb-6"><CardHeader><CardTitle className="text-base">研究笔记</CardTitle><NoteCreateDialog projectId={idea.project_id} ideas={[idea]} runs={runs} initialIdeaId={idea.id} onCreated={load} /></CardHeader><CardContent><ResearchNotes notes={notes.filter((n) => !isNextNote(n))} onChanged={load} /></CardContent></Card>
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="text-base">版本时间线</CardTitle>

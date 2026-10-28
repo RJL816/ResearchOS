@@ -16,8 +16,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createProject } from "@/lib/api";
+import { useProjectContext } from "@/components/project-context";
+import { useRouter } from "@/lib/navigation";
 
 export function ProjectCreateDialog({ onCreated }: { onCreated: () => void }) {
+  const { refresh, setActiveProject } = useProjectContext();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -29,14 +33,17 @@ export function ProjectCreateDialog({ onCreated }: { onCreated: () => void }) {
     setSubmitting(true);
     setError(null);
     try {
-      await createProject({
+      const project = await createProject({
         name: name.trim(),
         description: description.trim() || undefined,
       });
       setOpen(false);
       setName("");
       setDescription("");
+      await refresh();
+      setActiveProject(project.id);
       onCreated();
+      router.push(`/projects/${project.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

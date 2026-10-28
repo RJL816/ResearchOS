@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -85,20 +85,20 @@ export function ResizeHandle({
 
 /** Persisted panel width with clamping. */
 export function usePanelWidth(storageKey: string, fallback: number) {
-  const [width, setWidth] = useState<number | null>(null);
-  useEffect(() => {
-    const stored = Number(localStorage.getItem(storageKey));
-    setWidth(Number.isFinite(stored) && stored > 0 ? stored : fallback);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const subscribe = useCallback((notify: () => void) => {
+    window.addEventListener("research-panel-width", notify);
+    return () => window.removeEventListener("research-panel-width", notify);
   }, []);
-  const update = useCallback(
-    (value: number) => {
-      setWidth(value);
-      localStorage.setItem(storageKey, String(Math.round(value)));
-    },
-    [storageKey],
-  );
-  return [width ?? fallback, update] as const;
+  const read = useCallback(() => {
+    const value = Number(localStorage.getItem(storageKey));
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  }, [storageKey, fallback]);
+  const width = useSyncExternalStore(subscribe, read, () => fallback);
+  const update = useCallback((value: number) => {
+    localStorage.setItem(storageKey, String(Math.round(value)));
+    window.dispatchEvent(new Event("research-panel-width"));
+  }, [storageKey]);
+  return [width, update] as const;
 }
 
 export function clampPanelWidth(value: number, containerWidth: number, min = 300, maxRatio = 0.6) {

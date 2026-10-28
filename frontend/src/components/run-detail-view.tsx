@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useRouteId } from "@/lib/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   Card,
@@ -16,23 +16,35 @@ import { StatusBadge } from "@/components/status-badge";
 import { MetricChart } from "@/components/metric-chart";
 import { EvidenceLinkDialog } from "@/components/evidence-link-dialog";
 import { getRun, getRunMetrics, type MetricSeries, type RunDetail } from "@/lib/api";
+import { getIdeaVersionDetails, listIdeas, listNotes, type Idea, type IdeaVersionDetails, type ResearchNote } from "@/lib/api";
+import { RunCreateDialog } from "@/components/run-create-dialog";
+import { MetricEntryDialog } from "@/components/metric-entry-dialog";
+import { NoteCreateDialog } from "@/components/note-create-dialog";
+import { ResearchNotes } from "@/components/research-notes";
 import { fmtDateTime, fmtNumber } from "@/lib/format";
 
 export default function RunDetailPage() {
-  const params = useParams<{ id: string }>();
-  const runId = Number(params.id);
+  const runId = useRouteId();
 
   const [run, setRun] = useState<RunDetail | null>(null);
   const [series, setSeries] = useState<MetricSeries[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [target, setTarget] = useState<IdeaVersionDetails | null>(null);
+  const [notes, setNotes] = useState<ResearchNote[]>([]);
+  const [ideas, setIdeas] = useState<Idea[]>([]);
 
   const load = useCallback(async () => {
     try {
-      setError(null);
       const [runDetail, metrics] = await Promise.all([getRun(runId), getRunMetrics(runId)]);
       setRun(runDetail);
       setSeries(metrics.series);
+      const [allNotes, allIdeas, targetDetails] = await Promise.all([
+        listNotes(runDetail.project_id), listIdeas(runDetail.project_id),
+        runDetail.target_version_id ? getIdeaVersionDetails(runDetail.target_version_id) : Promise.resolve(null),
+      ]);
+      setNotes(allNotes.filter((n) => n.run_id === runId)); setIdeas(allIdeas); setTarget(targetDetails);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -41,6 +53,7 @@ export default function RunDetailPage() {
   }, [runId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Async API loader; updates occur after the request settles.
     void load();
   }, [load]);
 
@@ -67,14 +80,15 @@ export default function RunDetailPage() {
   const statsByName = new Map(run.metric_stats.map((s) => [s.name, s]));
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto max-w-4xl p-6">
       <div className="mb-6">
         <Link
-          href={`/projects/${run.project_id}`}
+          href={`/projects/${run.project_id}/experiments`}
           className="text-muted-foreground hover:text-foreground text-sm"
         >
-          ← 返回项目
+          ← 返回实验台
         </Link>
+        {run.research_idea_id && <Link className="ml-4 text-sm text-primary underline" href={`/research-ideas/${run.research_idea_id}`}>查看所属研究 Idea</Link>}
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{run.name}</h1>
           <StatusBadge kind="run" value={run.status} />
@@ -88,9 +102,16 @@ export default function RunDetailPage() {
           </span>
           <span>创建于 {fmtDateTime(run.created_at)}</span>
         </p>
-        <div className="mt-4">
-          <EvidenceLinkDialog mode="run" runId={run.id} projectId={run.project_id} onLinked={load} />
+        <div className="mt-4 flex flex-wrap gap-2">
+          <RunCreateDialog key={run.updated_at} projectId={run.project_id} run={run} onCreated={load} />
+          <MetricEntryDialog runId={run.id} onSaved={load} />
+          <EvidenceLinkDialog mode="run" runId={run.id} projectId={run.project_id} initialVersionId={run.target_version_id ?? undefined} onLinked={load} />
         </div>
+      </div>
+
+      <div className="mb-6 rounded-lg border p-4 space-y-2 text-sm">
+        <p className="font-medium">{run.status === "planned" ? "下一步：确认实验设计，开始后更新为运行中。" : run.status === "running" ? "下一步：实验结束后更新状态，补录结果与指标。" : "下一步：根据结果关联证据，再回到假设记录判断或修订。"}</p>
+        {target ? <Link className="text-primary hover:underline" href={`/ideas/${target.idea.id}`}>验证目标：{target.idea.title} · v{target.version.version_number} → 返回假设</Link> : <p className="text-muted-foreground">尚未设置验证目标，可通过「编辑实验」关联假设版本。</p>}
       </div>
 
       <div className="mb-6 grid gap-4 md:grid-cols-2">
@@ -149,7 +170,7 @@ export default function RunDetailPage() {
         <CardContent>
           {!series || series.length === 0 ? (
             <p className="text-muted-foreground text-sm">
-              暂无指标数据（Phase 2 的文件导入器将通过 /api/runs/&#123;id&#125;/metrics 写入）。
+              暂无指标数据。点击「补录指标」记录结果，也可以先在实验记录中写下观察。
             </p>
           ) : (
             <div className="space-y-6">
@@ -175,6 +196,7 @@ export default function RunDetailPage() {
           )}
         </CardContent>
       </Card>
+      <Card className="mt-6"><CardHeader><CardTitle className="text-base">实验观察与后续问题</CardTitle><NoteCreateDialog projectId={run.project_id} ideas={ideas} runs={[run]} initialRunId={run.id} initialIdeaId={target?.idea.id} onCreated={load} /></CardHeader><CardContent><ResearchNotes notes={notes} onChanged={load} /></CardContent></Card>
 
       <Card>
         <CardHeader>

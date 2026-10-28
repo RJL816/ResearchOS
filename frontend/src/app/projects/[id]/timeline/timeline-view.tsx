@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { FlaskConical, GitBranch, MessageSquareText, NotebookPen, ScrollText } from "lucide-react";
+import { useRouteId } from "@/lib/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FlaskConical, GitBranch, NotebookPen, ScrollText } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -33,26 +33,26 @@ const KIND_ICON = {
 } as const;
 
 export default function TimelineView() {
-  const params = useParams<{ id: string }>();
-  const projectId = Number(params.id);
+  const projectId = useRouteId();
   const [events, setEvents] = useState<Event[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setError(null);
       const [ideas, runs, notes] = await Promise.all([
         listIdeas(projectId),
         listRuns(projectId),
         listNotes(projectId),
       ]);
       setEvents(mergeEvents(ideas, runs, notes));
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [projectId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Async API loader; updates occur after the request settles.
     void load();
   }, [load]);
 

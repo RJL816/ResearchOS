@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -94,6 +95,41 @@ class Project(Base, TimestampMixin):
     )
 
 
+class ResearchIdea(Base, TimestampMixin):
+    """A research direction or proposal, separate from testable hypotheses."""
+    __tablename__ = "research_ideas"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    background: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    goal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    methods: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    innovation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    theory: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    results: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    conclusions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    future_plan: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class ResearchConclusion(Base, TimestampMixin):
+    __tablename__ = "research_conclusions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    research_idea_id: Mapped[int] = mapped_column(ForeignKey("research_ideas.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id: Mapped[Optional[int]] = mapped_column(ForeignKey("experiment_runs.id", ondelete="SET NULL"), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class ResearchIdeaDocument(Base, TimestampMixin):
+    __tablename__ = "research_idea_documents"
+    __table_args__ = (UniqueConstraint("research_idea_id", "content_hash", name="uq_research_idea_document_hash"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    research_idea_id: Mapped[int] = mapped_column(ForeignKey("research_ideas.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename: Mapped[str] = mapped_column(String(300), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    extracted_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class Idea(Base, TimestampMixin):
     """Stable identity of a research hypothesis; content lives in its versions."""
 
@@ -107,6 +143,7 @@ class Idea(Base, TimestampMixin):
     project_id: Mapped[int] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    research_idea_id: Mapped[Optional[int]] = mapped_column(ForeignKey("research_ideas.id", ondelete="SET NULL"), nullable=True)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="exploring")
     # Points at the newest version. Nullable + SET NULL because of the circular
@@ -197,6 +234,10 @@ class ExperimentRun(Base, TimestampMixin):
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(300), nullable=False)
+    research_idea_id: Mapped[Optional[int]] = mapped_column(ForeignKey("research_ideas.id", ondelete="SET NULL"), nullable=True)
+    target_version_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("idea_versions.id", ondelete="SET NULL"), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
     # Idempotency anchor: the same (source, key) pair always maps to one run row.
     external_source: Mapped[str] = mapped_column(String(50), nullable=False, default="manual")
@@ -278,6 +319,7 @@ class ResearchNote(Base, TimestampMixin):
         ForeignKey("experiment_runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
+    is_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     project: Mapped[Project] = relationship(back_populates="notes")

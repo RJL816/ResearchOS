@@ -13,6 +13,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
+import { IdeaCreateDialog } from "@/components/idea-create-dialog";
+import { NoteCreateDialog } from "@/components/note-create-dialog";
+import { isNextNote } from "@/components/research-notes";
 import { ProjectCreateDialog } from "@/components/project-create-dialog";
 import { useProjectContext } from "@/components/project-context";
 import {
@@ -40,7 +43,11 @@ interface ProjectData {
  * point is the research focus statement (serif), second is evidence state.
  */
 export default function OverviewPage() {
-  const { projects, activeProject, setActiveProject } = useProjectContext();
+  const { activeProjectId } = useProjectContext();
+  return <OverviewContent key={activeProjectId ?? "none"} />;
+}
+function OverviewContent() {
+  const { projects, activeProject, setActiveProject, loading, error: projectError, refresh } = useProjectContext();
   const [data, setData] = useState<ProjectData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const projectId = activeProject?.id ?? null;
@@ -51,20 +58,21 @@ export default function OverviewPage() {
       return;
     }
     try {
-      setError(null);
       const [runs, ideas, notes, summary] = await Promise.all([
         listRuns(projectId),
         listIdeas(projectId),
-        listNotes(projectId).catch(() => [] as ResearchNote[]),
-        getProposalSummary(projectId).catch(() => null),
+        listNotes(projectId),
+        getProposalSummary(projectId),
       ]);
       setData({ runs, ideas, notes, summary: summary && summary.total_count > 0 ? summary : null });
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [projectId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Async API loader; updates occur after the request settles.
     void load();
   }, [load]);
 
@@ -81,7 +89,7 @@ export default function OverviewPage() {
       (data?.ideas ?? [])
         .filter((i) => i.status === "exploring" || i.status === "testing")
         .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-        .slice(0, 4),
+        ,
     [data],
   );
   const recentRuns = useMemo(
@@ -108,17 +116,13 @@ export default function OverviewPage() {
       return {
         text: `处理 ${data.summary.pending_count} 条 AI 提案`,
         reason: "最近的对话分析产生了待审核变更",
-        href: data.summary.latest_job_id ? `/analysis/${data.summary.latest_job_id}` : `/projects/${projectId}/conversations`,
+        href: `/projects/${projectId}/analysis`,
       };
     }
-    const unreviewedRun = recentRuns.find((r) => r.status === "succeeded" || r.status === "failed");
-    if (unreviewedRun) {
-      return {
-        text: `复盘实验 ${unreviewedRun.name}`,
-        reason: "已有结果尚未关联到假设证据",
-        href: `/runs/${unreviewedRun.id}`,
-      };
-    }
+    const question = data?.notes.find((n) => isNextNote(n) && !n.is_done);
+    if (question) return { text: question.title.replace(/^Next:\s*/i, ""), reason: "已记录但尚未完成的研究问题", href: question.idea_id ? `/ideas/${question.idea_id}` : `/projects/${projectId}?tab=next` };
+    const inProgress = data?.runs.find((r) => r.status === "planned" || r.status === "running");
+    if (inProgress) return { text: `推进实验「${inProgress.name}」`, reason: inProgress.status === "planned" ? "检查设计并开始验证" : "更新进展或补录结果", href: `/runs/${inProgress.id}` };
     if (activeIdeas[0]) {
       return {
         text: `验证假设「${activeIdeas[0].title}」`,
@@ -127,12 +131,14 @@ export default function OverviewPage() {
       };
     }
     return {
-      text: "记录第一个实验",
-      reason: "证据是研究记忆的起点",
-      href: `/projects/${projectId}/experiments`,
+      text: "记录第一个研究假设",
+      reason: "先写下想验证的问题，再安排实验",
+      href: `/projects/${projectId}`,
     };
-  }, [data, recentRuns, activeIdeas, projectId]);
+  }, [data, activeIdeas, projectId]);
 
+  if (loading) return <div className="p-6"><Skeleton className="h-48" /></div>;
+  if (projectError) return <div className="p-6 space-y-3"><p className="text-destructive">{projectError}</p><Button onClick={() => void refresh()}>重新连接</Button></div>;
   if (projects.length === 0 && !error) {
     return (
       <div className="p-8">
@@ -142,7 +148,7 @@ export default function OverviewPage() {
             还没有研究项目。创建第一个项目，开始记录假设、实验与证据。
           </p>
           <div className="mt-4 flex justify-center">
-            <ProjectCreateDialog onCreated={() => window.location.reload()} />
+            <ProjectCreateDialog onCreated={() => {}} />
           </div>
         </div>
       </div>
@@ -189,7 +195,7 @@ export default function OverviewPage() {
                 <p className="font-serif-ink mt-1.5 max-w-3xl text-[22px] leading-[34px] font-medium">
                   {focus.text}
                 </p>
-                {focus.derived && <p className="text-muted-foreground mt-1 text-[11px]">来自项目描述</p>}
+                {focus.derived && <p className="text-muted-foreground mt-1 text-[11px]">来自活跃假设</p>}
               </>
             ) : (
               <p className="text-muted-foreground mt-2 text-sm">
@@ -200,7 +206,7 @@ export default function OverviewPage() {
               <span className="font-medium">{activeProject.name}</span>
               <StatusBadge kind="project" value={activeProject.status} />
               <Button asChild size="sm" className="h-7 text-xs">
-                <Link href={`/projects/${projectId}/ideas/graph`}>
+                <Link href={`/projects/${projectId}`}>
                   继续研究
                   <ArrowRight className="size-3" />
                 </Link>
@@ -217,7 +223,9 @@ export default function OverviewPage() {
                   导入对话
                 </Link>
               </Button>
-              <ProjectCreateDialog onCreated={() => void load()} />
+              <IdeaCreateDialog projectId={projectId!} onCreated={load} />
+              <NoteCreateDialog projectId={projectId!} ideas={data?.ideas ?? []} runs={data?.runs ?? []} onCreated={load} />
+              <ProjectCreateDialog onCreated={() => {}} />
             </div>
             <p className="text-muted-foreground mt-2.5 flex flex-wrap items-baseline gap-1 text-xs">
               下一步：
@@ -244,7 +252,7 @@ export default function OverviewPage() {
                   <EmptyLine text="没有探索中或验证中的假设。" />
                 ) : (
                   <ul className="divide-border-subtle border-border-subtle divide-y border-y">
-                    {activeIdeas.map((idea) => (
+                    {activeIdeas.slice(0, 4).map((idea) => (
                       <li key={idea.id}>
                         <Link
                           href={`/ideas/${idea.id}`}
@@ -325,14 +333,14 @@ export default function OverviewPage() {
                 <div className="divide-border-subtle border-border-subtle divide-y border-y">
                   {data.summary ? (
                     <Link
-                      href={data.summary.latest_job_id ? `/analysis/${data.summary.latest_job_id}` : "#"}
+                      href={`/projects/${projectId}/analysis`}
                       className="hover:bg-accent/40 flex items-center gap-2.5 py-2.5 transition-standard"
                     >
                       <Workflow className="text-warning size-4 shrink-0" />
                       <div className="min-w-0 flex-1">
                         <p className="text-[13px] font-medium">AI 提案 {data.summary.pending_count} 条待审</p>
                         <p className="text-muted-foreground text-[11px]">
-                          共 {data.summary.total_count} 条，来自最近的对话分析
+                          共 {data.summary.total_count} 条，来自项目内全部分析
                         </p>
                       </div>
                     </Link>
@@ -349,7 +357,7 @@ export default function OverviewPage() {
                     {data.notes.slice(0, 4).map((note) => (
                       <li key={note.id} className="flex items-center gap-2 py-2 text-[13px]">
                         <NotebookPen className="text-muted-foreground size-3.5 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate">{note.title}</span>
+                        <Link href={note.idea_id ? `/ideas/${note.idea_id}` : `/projects/${projectId}?tab=notes`} className="min-w-0 flex-1 truncate hover:underline">{note.title}</Link>
                         <span className="text-muted-foreground shrink-0 text-[11px]">{fmtRelative(note.created_at)}</span>
                       </li>
                     ))}

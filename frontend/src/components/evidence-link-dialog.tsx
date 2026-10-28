@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ type Props =
       mode: "version";
       /** Linking from an idea page: run is chosen, version defaults to current. */
       idea: Idea;
+      initialVersionId?: number;
       projectId: number;
       onLinked: () => void;
     }
@@ -48,6 +50,7 @@ type Props =
       mode: "run";
       /** Linking from a run page: idea + version are chosen. */
       runId: number;
+      initialVersionId?: number;
       projectId: number;
       onLinked: () => void;
     };
@@ -63,25 +66,32 @@ export function EvidenceLinkDialog(props: Props) {
     props.mode === "version" ? String(props.idea.id) : "",
   );
   const [versionId, setVersionId] = useState<string>("");
-  const [verdict, setVerdict] = useState<Verdict>("supports");
+  const [verdict, setVerdict] = useState<Verdict>("inconclusive");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setLoadError(null);
+    let stale = false;
     Promise.all([listRuns(props.projectId), listIdeas(props.projectId)])
       .then(([runList, ideaList]) => {
+        if (stale) return;
+        setLoadError(null);
         setRuns(runList);
         setIdeas(ideaList);
+        if (props.mode === "run" && props.initialVersionId) {
+          const target = ideaList.find((i) => i.versions.some((v) => v.id === props.initialVersionId));
+          if (target) { setIdeaId(String(target.id)); setVersionId(String(props.initialVersionId)); }
+        }
         if (props.mode === "version") {
           setVersionId(
-            props.idea.current_version_id ? String(props.idea.current_version_id) : "",
+            String(props.initialVersionId ?? props.idea.current_version_id ?? ""),
           );
         }
       })
-      .catch((err) => setLoadError(err instanceof Error ? err.message : String(err)));
+      .catch((err) => { if (!stale) setLoadError(err instanceof Error ? err.message : String(err)); });
+    return () => { stale = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, props.projectId]);
 
@@ -89,17 +99,6 @@ export function EvidenceLinkDialog(props: Props) {
     () => ideas.find((i) => String(i.id) === ideaId),
     [ideas, ideaId],
   );
-
-  // Keep version selection valid whenever the idea selection changes.
-  useEffect(() => {
-    if (!selectedIdea) return;
-    const current = selectedIdea.current_version_id
-      ? String(selectedIdea.current_version_id)
-      : "";
-    setVersionId((prev) =>
-      selectedIdea.versions.some((v) => String(v.id) === prev) ? prev : current,
-    );
-  }, [selectedIdea]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -169,7 +168,7 @@ export function EvidenceLinkDialog(props: Props) {
             {props.mode === "run" && (
               <div className="space-y-2">
                 <Label>假设 *</Label>
-                <Select value={ideaId} onValueChange={setIdeaId}>
+                <Select value={ideaId} onValueChange={(value) => { setIdeaId(value); setVersionId(String(ideas.find((i) => i.id === Number(value))?.current_version_id ?? "")); }}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="选择假设" />
                   </SelectTrigger>
@@ -186,9 +185,7 @@ export function EvidenceLinkDialog(props: Props) {
             <div className="space-y-2">
               <Label>假设版本 *</Label>
               {props.mode === "version" ? (
-                <div className="text-muted-foreground bg-muted/50 rounded-md border px-3 py-2 text-sm">
-                  {versionLabelOf(props.idea, versionId)}
-                </div>
+                <Select value={versionId} onValueChange={setVersionId}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{props.idea.versions.map((v) => <SelectItem key={v.id} value={String(v.id)}>v{v.version_number}{v.id === props.idea.current_version_id ? "（当前）" : ""}</SelectItem>)}</SelectContent></Select>
               ) : (
                 <Select value={versionId} onValueChange={setVersionId}>
                   <SelectTrigger className="w-full">
@@ -231,6 +228,7 @@ export function EvidenceLinkDialog(props: Props) {
               />
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
+            {ideas.length === 0 && <Link href={`/projects/${props.projectId}`} className="text-sm text-primary underline">先到项目工作台创建假设</Link>}
           </div>
           <DialogFooter className="mt-6">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
@@ -244,12 +242,4 @@ export function EvidenceLinkDialog(props: Props) {
       </DialogContent>
     </Dialog>
   );
-}
-
-function versionLabelOf(idea: Idea, versionId: string): string {
-  const version = idea.versions.find((v) => String(v.id) === versionId);
-  if (!version) return "当前版本";
-  return `v${version.version_number}${
-    version.id === idea.current_version_id ? "（当前）" : ""
-  }`;
 }

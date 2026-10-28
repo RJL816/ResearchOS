@@ -21,9 +21,11 @@ import { createIdea } from "@/lib/api";
 export function IdeaCreateDialog({
   projectId,
   onCreated,
+  researchIdeaId,
 }: {
   projectId: number;
   onCreated: () => void;
+  researchIdeaId?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -39,6 +41,7 @@ export function IdeaCreateDialog({
       await createIdea(projectId, {
         title: title.trim(),
         body: body.trim(),
+        research_idea_id: researchIdeaId,
       });
       setOpen(false);
       setTitle("");

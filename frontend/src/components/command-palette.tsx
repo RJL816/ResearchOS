@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
@@ -12,7 +12,6 @@ import {
   ScrollText,
   Search,
   Settings,
-  Workflow,
 } from "lucide-react";
 import {
   Dialog,
@@ -89,7 +88,7 @@ export function CommandPalette() {
       ...(pid
         ? ([
             { label: "实验台", hint: "导航", icon: FlaskConical, action: () => go(`/projects/${pid}/experiments`), keywords: "experiments runs" },
-            { label: "Idea 演化图谱", hint: "导航", icon: GitBranch, action: () => go(`/projects/${pid}/ideas/graph`), keywords: "graph evolution" },
+            { label: "假设演化图谱", hint: "导航", icon: GitBranch, action: () => go(`/projects/${pid}/ideas/graph`), keywords: "graph evolution" },
             { label: "研究时间线", hint: "导航", icon: ScrollText, action: () => go(`/projects/${pid}/timeline`), keywords: "timeline history" },
             { label: "对话导入", hint: "导航", icon: MessageSquareText, action: () => go(`/projects/${pid}/conversations`), keywords: "conversation import" },
             { label: "Agent 导入", hint: "导航", icon: NotebookPen, action: () => go(`/projects/${pid}/agent-import`), keywords: "agent prompt structured" },
@@ -133,15 +132,11 @@ export function CommandPalette() {
     return [...nav, ...projectItems, ...ideaItems, ...runItems];
   }, [query, projects, pid, ideas, runs, go, setActiveProject]);
 
-  useEffect(() => {
-    setCursor(0);
-  }, [query]);
-
   const onKey = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setCursor((c) => Math.min(c + 1, items.length - 1));
+        setCursor((c) => Math.max(0, Math.min(c + 1, items.length - 1)));
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setCursor((c) => Math.max(c - 1, 0));
@@ -169,7 +164,7 @@ export function CommandPalette() {
           <input
             autoFocus
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setQuery(e.target.value); setCursor(0); }}
             placeholder="搜索假设、实验，或输入页面名跳转…"
             className="w-full border-b bg-transparent px-4 py-3 text-sm outline-none"
             aria-label="命令搜索"

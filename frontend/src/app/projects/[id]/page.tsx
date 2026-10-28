@@ -1,32 +1,14 @@
 import { Suspense } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
 import ProjectDetailView from "@/components/project-detail-view";
-import { InvalidParamScreen } from "@/components/invalid-param-screen";
+import { RouteBoundary } from "@/lib/navigation";
 
 
-// generateStaticParams is only needed for the desktop static export
-// (DESKTOP_BUILD=1); in web/PPR mode exporting it pins placeholder routes.
+// Desktop exports use a placeholder; the client reads the actual numeric URL.
 export function generateStaticParams() {
   return [{ id: "app" }];
 }
 
 
-export default async function ProjectPage({ params }: { params: Promise<Record<string, string>> }) {
-  const { id } = await params;
-  const numericId = Number(id);
-  if (!Number.isInteger(numericId) || numericId <= 0) {
-    return <InvalidParamScreen />;
-  }
-  return (
-    <Suspense
-      fallback={
-        <div className="mx-auto max-w-5xl space-y-4">
-          <Skeleton className="h-10 w-72" />
-          <Skeleton className="h-64 rounded-xl" />
-        </div>
-      }
-    >
-      <ProjectDetailView />
-    </Suspense>
-  );
+export default function Page() {
+  return <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">正在打开工作区…</div>}><RouteBoundary><ProjectDetailView /></RouteBoundary></Suspense>;
 }

@@ -12,8 +12,8 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Database URL always comes from application settings, never hardcoded here.
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Programmatic callers may target an isolated copy or a desktop data directory.
+config.set_main_option("sqlalchemy.url", config.attributes.get("database_url") or get_settings().database_url)
 
 target_metadata = Base.metadata
 

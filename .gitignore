@@ -33,3 +33,6 @@ frontend/out/
 # OS / editor
 Thumbs.db
 *.log
+.verification/
+frontend/.eslint-audit.json
+backend/backups/

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouteId, useRouter } from "@/lib/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowUpDown, FlaskConical, GitBranchPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,9 +38,8 @@ function durationText(ms: number | null) {
 }
 
 export default function ExperimentsView() {
-  const params = useParams<{ id: string }>();
   const router = useRouter();
-  const projectId = Number(params.id);
+  const projectId = useRouteId();
 
   const [project, setProject] = useState<Project | null>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -51,7 +50,6 @@ export default function ExperimentsView() {
 
   const load = useCallback(async () => {
     try {
-      setError(null);
       const [projectData, runs] = await Promise.all([getProject(projectId), listRuns(projectId)]);
       setProject(projectData);
       const details = await Promise.all(
@@ -74,12 +72,14 @@ export default function ExperimentsView() {
         }),
       );
       setRows(details);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [projectId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Async API loader; updates occur after the request settles.
     void load();
   }, [load]);
 
@@ -119,7 +119,7 @@ export default function ExperimentsView() {
     );
   };
 
-  const allSelected = sorted !== null && sorted.length > 0 && selected.length === sorted.length;
+  const allSelected = sorted !== null && sorted.length > 0 && sorted.slice(0, 4).every((row) => selected.includes(row.run.id));
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
@@ -171,14 +171,14 @@ export default function ExperimentsView() {
                   <input
                     type="checkbox"
                     checked={allSelected}
-                    onChange={() => setSelected(allSelected ? [] : sorted.map((r) => r.run.id))}
+                    onChange={() => setSelected(allSelected ? [] : sorted.slice(0, 4).map((r) => r.run.id))}
                     className="accent-(--primary) size-3.5 cursor-pointer"
                     aria-label="全选"
                   />
                 </TableHead>
                 <SortableHead label="Run" sortKey="name" active={sortKey} asc={asc} onSort={toggleSort} mono />
                 <SortableHead label="状态" sortKey="status" active={sortKey} asc={asc} onSort={toggleSort} />
-                <TableHead>主指标（最新）</TableHead>
+                <TableHead>指标示例（最新）</TableHead>
                 <TableHead className="hidden lg:table-cell">趋势</TableHead>
                 <TableHead className="hidden xl:table-cell">关联假设</TableHead>
                 <SortableHead label="耗时" sortKey="duration" active={sortKey} asc={asc} onSort={toggleSort} className="hidden md:table-cell" />
@@ -311,7 +311,7 @@ function SortableHead({
         )}
       >
         <span className={mono ? "font-mono" : undefined}>{label}</span>
-        <ArrowUpDown className={cn("size-3", isActive ? "opacity-100" : "opacity-40")} />
+        <ArrowUpDown aria-label={isActive ? asc ? "升序" : "降序" : "切换排序"} className={cn("size-3", isActive ? "opacity-100" : "opacity-40")} />
       </button>
     </TableHead>
   );

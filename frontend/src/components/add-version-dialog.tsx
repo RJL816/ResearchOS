@@ -21,13 +21,15 @@ export function AddVersionDialog({
   ideaId,
   nextVersionNumber,
   onCreated,
+  currentBody = "",
 }: {
   ideaId: number;
   nextVersionNumber: number;
   onCreated: () => void;
+  currentBody?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState(currentBody);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -53,7 +55,7 @@ export function AddVersionDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) setBody(currentBody); setOpen(value); }}>
       <DialogTrigger asChild>
         <Button variant="outline">
           <GitBranchPlus className="size-4" />

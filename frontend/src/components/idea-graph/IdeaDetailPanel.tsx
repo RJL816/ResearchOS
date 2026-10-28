@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import Markdown from "react-markdown";
 import { ArrowUpRight, Loader2, MessageSquareText, RotateCcw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,62 +12,41 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/status-badge";
 import { getIdeaVersionDetails, getVersionSources, type IdeaVersionDetails, type VersionSource } from "@/lib/api";
 import { fmtDateTime } from "@/lib/format";
-import { IdeaEvidenceList, EmptyBlock } from "./IdeaEvidenceList";
+import { IdeaEvidenceList } from "./IdeaEvidenceList";
 import { IdeaEvolutionHistory } from "./IdeaEvolutionHistory";
+import { getIdea, type Idea } from "@/lib/api";
+import { AddVersionDialog } from "@/components/add-version-dialog";
+import { EvidenceLinkDialog } from "@/components/evidence-link-dialog";
+import { RunCreateDialog } from "@/components/run-create-dialog";
+import { NoteCreateDialog } from "@/components/note-create-dialog";
+import { ResearchNotes, isNextNote } from "@/components/research-notes";
+import { IdeaStatusSelect } from "@/components/idea-status-select";
 
-const MD_COMPONENTS = {
-  h1: (props: React.HTMLAttributes<HTMLElement>) => (
-    <h3 className="mb-1 mt-3 first:mt-0 text-sm font-bold" {...props} />
-  ),
-  h2: (props: React.HTMLAttributes<HTMLElement>) => (
-    <h4 className="mb-1 mt-3 first:mt-0 text-sm font-semibold" {...props} />
-  ),
-  h3: (props: React.HTMLAttributes<HTMLElement>) => (
-    <h5 className="mb-1 mt-2 first:mt-0 text-xs font-semibold" {...props} />
-  ),
-  p: (props: React.HTMLAttributes<HTMLElement>) => (
-    <p className="text-xs leading-relaxed" {...props} />
-  ),
-  ul: (props: React.HTMLAttributes<HTMLElement>) => (
-    <ul className="list-disc space-y-0.5 pl-4 text-xs leading-relaxed" {...props} />
-  ),
-  ol: (props: React.HTMLAttributes<HTMLElement>) => (
-    <ol className="list-decimal space-y-0.5 pl-4 text-xs leading-relaxed" {...props} />
-  ),
-  blockquote: (props: React.HTMLAttributes<HTMLElement>) => (
-    <blockquote className="text-muted-foreground border-l-2 pl-2 text-xs leading-relaxed" {...props} />
-  ),
-  code: (props: React.HTMLAttributes<HTMLElement>) => (
-    <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]" {...props} />
-  ),
-  pre: (props: React.HTMLAttributes<HTMLElement>) => (
-    <pre className="bg-muted/60 overflow-x-auto rounded-md p-2 font-mono text-[11px] leading-relaxed" {...props} />
-  ),
-  a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-    <a className="text-primary underline underline-offset-2" target="_blank" rel="noreferrer" {...props} />
-  ),
-};
+
 
 export function IdeaDetailPanel({
   versionId,
   onClose,
   onSelectNode,
+  onChanged,
 }: {
   versionId: number;
   onClose: () => void;
   onSelectNode: (versionId: number) => void;
+  onChanged: () => void;
 }) {
   const [details, setDetails] = useState<IdeaVersionDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
+  const [idea, setIdea] = useState<Idea | null>(null);
+  const reload = () => { setRetryNonce((n) => n + 1); onChanged(); };
 
   useEffect(() => {
     let stale = false;
-    setDetails(null);
-    setError(null);
     getIdeaVersionDetails(versionId)
-      .then((data) => {
-        if (!stale) setDetails(data);
+      .then(async (data) => {
+        const fullIdea = await getIdea(data.idea.id);
+        if (!stale) { setDetails(data); setIdea(fullIdea); setError(null); }
       })
       .catch((err: unknown) => {
         if (!stale) setError(err instanceof Error ? err.message : String(err));
@@ -94,7 +72,7 @@ export function IdeaDetailPanel({
                   href={`/ideas/${details.idea.id}`}
                   className="text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5 text-[11px] hover:underline"
                 >
-                  时间线 <ArrowUpRight className="size-3" />
+                  打开假设工作区 <ArrowUpRight className="size-3" />
                 </Link>
               </div>
             </>
@@ -124,7 +102,13 @@ export function IdeaDetailPanel({
           </div>
         ) : (
           <Tabs defaultValue="overview" className="flex h-full min-h-0 flex-col">
-            <div className="border-b px-3 py-2">
+            <div className="border-b px-3 py-2 space-y-2">
+              {idea && <div className="flex flex-wrap gap-2">
+                <RunCreateDialog projectId={idea.project_id} researchIdeaId={idea.research_idea_id ?? undefined} initialVersionId={versionId} onCreated={reload} />
+                <AddVersionDialog ideaId={idea.id} nextVersionNumber={Math.max(...idea.versions.map((v) => v.version_number)) + 1} currentBody={idea.versions.find((v) => v.id === idea.current_version_id)?.body} onCreated={reload} />
+                <EvidenceLinkDialog mode="version" idea={idea} projectId={idea.project_id} initialVersionId={versionId} onLinked={reload} />
+                <IdeaStatusSelect ideaId={idea.id} status={idea.status} onChanged={reload} />
+              </div>}
               <TabsList className="h-8">
                 <TabsTrigger value="overview" className="px-2 text-xs">概览</TabsTrigger>
                 <TabsTrigger value="evolution" className="px-2 text-xs">演化</TabsTrigger>
@@ -150,12 +134,12 @@ export function IdeaDetailPanel({
                   <IdeaEvidenceList evidence={details.evidence} />
                 </TabsContent>
                 <TabsContent key={versionId} value="notes" className="mt-0">
-                  <NotesSection details={details} />
+                  {idea && <NoteCreateDialog projectId={idea.project_id} ideas={[idea]} runs={[]} initialIdeaId={idea.id} onCreated={reload} />}
+                  <ResearchNotes notes={details.notes.filter((n) => !isNextNote(n))} onChanged={reload} />
                 </TabsContent>
                 <TabsContent key={versionId} value="next" className="mt-0">
-                  <EmptyBlock
-                    text={"暂无记录。下一步待验证的问题建议写入研究笔记（可在笔记标题前加「Next:」前缀），系统不会自动编造建议。"}
-                  />
+                  {idea && <NoteCreateDialog projectId={idea.project_id} ideas={[idea]} runs={[]} initialIdeaId={idea.id} nextStep onCreated={reload} />}
+                  <ResearchNotes notes={details.notes.filter(isNextNote)} onChanged={reload} />
                 </TabsContent>
               </div>
             </ScrollArea>
@@ -238,41 +222,6 @@ function OverviewSection({ details }: { details: IdeaVersionDetails }) {
           <span className="text-muted-foreground/70">（状态由研究者手动维护）</span>
         </div>
       </section>
-    </div>
-  );
-}
-
-function NotesSection({ details }: { details: IdeaVersionDetails }) {
-  if (details.notes.length === 0) {
-    return (
-      <EmptyBlock text="该假设暂无关联笔记。笔记按假设（Idea）维度关联，所有版本共享。" />
-    );
-  }
-  return (
-    <div className="space-y-3">
-      {details.notes.map((note) => (
-        <div key={note.id} className="rounded-lg border p-3">
-          <div className="mb-1 flex items-baseline justify-between gap-2">
-            <h5 className="text-xs font-semibold">{note.title}</h5>
-            <span className="text-muted-foreground shrink-0 text-[10px]">
-              {fmtDateTime(note.created_at)}
-            </span>
-          </div>
-          {note.content && (
-            <div className="space-y-1.5 [&>_:first-child]:mt-0 [&>_:last-child]:mb-0">
-              <Markdown components={MD_COMPONENTS}>{note.content}</Markdown>
-            </div>
-          )}
-          {note.run_id && (
-            <Link
-              href={`/runs/${note.run_id}`}
-              className="text-muted-foreground hover:text-foreground mt-2 inline-block text-[11px] hover:underline"
-            >
-              → 关联实验 #{note.run_id}
-            </Link>
-          )}
-        </div>
-      ))}
     </div>
   );
 }

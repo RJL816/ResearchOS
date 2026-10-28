@@ -69,6 +69,12 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
 @router.patch("/runs/{run_id}", response_model=schemas.RunRead)
 def update_run(run_id: int, data: schemas.RunUpdate, db: Session = Depends(get_db)):
     run = services.get_object_or_404(db, ExperimentRun, run_id, "ExperimentRun")
+    if "research_idea_id" in data.model_fields_set:
+        services.validate_research_idea(db, run.project_id, data.research_idea_id)
+        run.research_idea_id = data.research_idea_id
+    if "target_version_id" in data.model_fields_set:
+        services.validate_run_target(db, run.project_id, data.target_version_id)
+        run.target_version_id = data.target_version_id
     if data.name is not None:
         run.name = data.name
     if data.status is not None:

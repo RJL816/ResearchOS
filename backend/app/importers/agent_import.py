@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import json
 import re
 from typing import Any, Literal, Optional, Union
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, create_engine
 from sqlalchemy.orm import Session
 
 from .. import schemas, services
@@ -64,7 +65,7 @@ class AgentMetric(BaseModel):
 class AgentRun(BaseModel):
     ref: Optional[str] = None
     name: str = Field(min_length=1, max_length=300)
-    status: schemas.RunStatus = "succeeded"
+    status: schemas.RunStatus = "planned"
     git_commit: Optional[str] = Field(default=None, max_length=64)
     dataset: Optional[str] = Field(default=None, max_length=200)
     eval_protocol: Optional[str] = None
@@ -197,6 +198,28 @@ class _RefRegistry:
 def apply_agent_import(
     db: Session, project_id: int, content: str, dry_run: bool = False
 ) -> AgentImportResult:
+    if dry_run:
+        # Run the real importer against an isolated snapshot. Service methods
+        # commit individually; a rollback on the live session is not a preview.
+        from ..database import Base
+        from ..models import Project, IdeaVersion, EvidenceLink, ResearchNote, ResearchIdea
+
+        preview_engine = create_engine("sqlite://")
+        try:
+            Base.metadata.create_all(preview_engine)
+            with preview_engine.begin() as connection:
+                for model in (Project, ResearchIdea, Idea, IdeaVersion, ExperimentRun, EvidenceLink, ResearchNote):
+                    rows = list(db.execute(select(model.__table__)).mappings())
+                    if rows:
+                        connection.execute(model.__table__.insert(), [dict(row) for row in rows])
+            with Session(preview_engine) as preview_db:
+                result = apply_agent_import(preview_db, project_id, content)
+                for item in result.created:
+                    item.id = None
+                    item.detail = "预览：" + (item.detail or "将创建")
+                return result
+        finally:
+            preview_engine.dispose()
     services.get_object_or_404(db, __import__("app.models", fromlist=["Project"]).Project, project_id, "Project")
 
     try:
@@ -236,6 +259,9 @@ def apply_agent_import(
                     title=item.title, body=item.body, change_reason=item.change_reason,
                 )
             )
+            if item.status != idea.status:
+                idea.status = item.status
+                db.commit()
             created.append(ImportItem(kind="idea", label=label, status="created", id=idea.id))
             if item.ref:
                 registry.ideas[item.ref] = idea.id
@@ -245,7 +271,14 @@ def apply_agent_import(
     # -- runs ---------------------------------------------------------------
     for item in envelope.runs:
         label = item.name
-        external_key = item.ref or f"agent-{hashlib.sha1(item.name.encode()).hexdigest()[:10]}"
+        # A ref is local to this document; reusing "run-1" in another import
+        # must not overwrite an unrelated experiment.
+        existing = db.scalar(select(ExperimentRun).where(
+            ExperimentRun.project_id == project_id,
+            ExperimentRun.external_source == "agent",
+            ExperimentRun.name == item.name,
+        ).order_by(ExperimentRun.id))
+        external_key = existing.external_key if existing else f"agent:name-{hashlib.sha256(item.name.encode()).hexdigest()[:20]}"
         if dry_run:
             created.append(ImportItem(kind="run", label=label, status="created", detail="（预演）将创建/更新实验"))
             continue
@@ -253,14 +286,16 @@ def apply_agent_import(
             run, created_flag = services.upsert_run(
                 db, project_id, schemas.RunCreate(
                     name=item.name,
-                    status=item.status,
+                    status=item.status if "status" in item.model_fields_set or not existing else existing.status,
                     external_source="agent",
-                    external_key=f"agent:{external_key}",
-                    git_commit=item.git_commit,
-                    dataset=item.dataset,
-                    eval_protocol=item.eval_protocol,
-                    params=item.params,
-                    notes=item.notes,
+                    external_key=external_key,
+                    git_commit=item.git_commit if "git_commit" in item.model_fields_set or not existing else existing.git_commit,
+                    dataset=item.dataset if "dataset" in item.model_fields_set or not existing else existing.dataset,
+                    eval_protocol=item.eval_protocol if "eval_protocol" in item.model_fields_set or not existing else existing.eval_protocol,
+                    params=item.params if "params" in item.model_fields_set or not existing else (json.loads(existing.params_json) if existing.params_json else None),
+                    notes=item.notes if "notes" in item.model_fields_set or not existing else existing.notes,
+                    started_at=existing.started_at if existing else None,
+                    finished_at=existing.finished_at if existing else None,
                 )
             )
             if item.metrics:
@@ -274,7 +309,7 @@ def apply_agent_import(
             target = created if created_flag else skipped
             target.append(ImportItem(
                 kind="run", label=label, status=action, id=run.id,
-                detail=None if created_flag else f"已存在，按外部键 agent:{external_key} 更新（幂等）",
+                detail=None if created_flag else "同名实验：更新实验信息和提供的指标",
             ))
         except HTTPException as exc:
             errors.append(ImportItem(kind="run", label=label, status="error", detail=str(exc.detail)))

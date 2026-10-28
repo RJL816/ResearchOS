@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "@/lib/navigation";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   BookOpenText,
   ChevronLeft,
@@ -11,6 +11,7 @@ import {
   FlaskConical,
   GitBranch,
   LayoutDashboard,
+  Lightbulb,
   MessageSquareText,
   PanelLeft,
   ScrollText,
@@ -23,6 +24,16 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "research-os-sidebar";
+
+function readSidebar() {
+  const preference = localStorage.getItem(STORAGE_KEY);
+  return preference ? preference === "collapsed" : window.matchMedia("(max-width: 1199px)").matches;
+}
+function subscribeSidebar(notify: () => void) {
+  const media = window.matchMedia("(max-width: 1199px)");
+  media.addEventListener("change", notify); window.addEventListener("research-sidebar", notify);
+  return () => { media.removeEventListener("change", notify); window.removeEventListener("research-sidebar", notify); };
+}
 
 interface NavItem {
   href: string | null;
@@ -37,8 +48,10 @@ const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
     title: "工作区",
     items: [
       { href: "/", label: "总览", icon: LayoutDashboard },
+      { href: null, label: "项目工作台", icon: BookOpenText, needsProject: true },
+      { href: null, label: "研究 Idea", icon: Lightbulb, needsProject: true },
       { href: null, label: "实验", icon: FlaskConical, needsProject: true }, // /projects/{id}/experiments
-      { href: null, label: "Idea 演化", icon: GitBranch, needsProject: true },
+      { href: null, label: "假设演化", icon: GitBranch, needsProject: true },
       { href: null, label: "研究时间线", icon: ScrollText, needsProject: true },
     ],
   },
@@ -72,33 +85,15 @@ export function AppSidebar() {
     const match = pathname.match(/^\/projects\/(\d+)(\/.*)?$/);
     if (match && String(id) !== match[1]) {
       router.push(`/projects/${id}${match[2] ?? ""}`);
+    } else if (/^\/(ideas|runs|analysis|research-ideas)\//.test(pathname)) {
+      router.push(`/projects/${id}`);
     }
   };
-  const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    setCollapsed(localStorage.getItem(STORAGE_KEY) === "collapsed");
-  }, []);
-
-  // Desktop windows resize freely: auto-collapse to the icon rail below 1200px
-  // (manual toggle still works; state is restored when the window widens).
-  useEffect(() => {
-    const media = window.matchMedia("(max-width: 1199px)");
-    const apply = () => {
-      if (media.matches) setCollapsed(true);
-      else setCollapsed(localStorage.getItem(STORAGE_KEY) === "collapsed");
-    };
-    apply();
-    media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
-  }, []);
-
+  const collapsed = useSyncExternalStore(subscribeSidebar, readSidebar, () => false);
   const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      localStorage.setItem(STORAGE_KEY, prev ? "open" : "collapsed");
-      return !prev;
-    });
+    localStorage.setItem(STORAGE_KEY, collapsed ? "open" : "collapsed");
+    window.dispatchEvent(new Event("research-sidebar"));
   };
 
   // Resolve placeholder hrefs against the active project.
@@ -110,9 +105,9 @@ export function AppSidebar() {
         : {
             ...item,
             href: projectHref(
-              item.label === "实验"
+              item.label === "项目工作台" ? "" : item.label === "研究 Idea" ? "/research-ideas" : item.label === "实验"
                 ? "/experiments"
-                : item.label === "Idea 演化"
+                : item.label === "假设演化"
                   ? "/ideas/graph"
                   : item.label === "研究时间线"
                     ? "/timeline"
@@ -129,6 +124,7 @@ export function AppSidebar() {
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
+    if (/^\/projects\/\d+$/.test(href)) return pathname === href;
     return pathname === href || pathname.startsWith(`${href}/`) || pathname === href.replace(/\/$/, "");
   };
 
@@ -177,7 +173,7 @@ export function AppSidebar() {
         {sections.map((section) => (
           <div key={section.title} className="mb-3">
             {!collapsed && (
-              <p className="text-muted-foreground/70 px-2 pt-1 pb-1 text-[10px] font-semibold tracking-widest uppercase">
+              <p className="text-muted-foreground/70 px-2 pt-1 pb-1 text-xs font-semibold tracking-wide">
                 {section.title}
               </p>
             )}
@@ -196,7 +192,7 @@ export function AppSidebar() {
                     }}
                     aria-disabled={disabled}
                     className={cn(
-                      "group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-standard",
+                      "group flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-standard",
                       collapsed && "justify-center px-0",
                       active
                         ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
@@ -229,11 +225,11 @@ export function AppSidebar() {
       </nav>
 
       {!collapsed && (
-        <div className="text-muted-foreground/70 border-t border-sidebar-border p-3 text-[11px] leading-relaxed">
+        <div className="text-muted-foreground/70 border-t border-sidebar-border p-3 text-xs leading-relaxed">
           <BookOpenText className="mb-1 size-3.5" />
-          Personal Research Workspace
+          你的研究工作台
           <br />
-          本地单机 · 数据经 FastAPI 存取
+          记录、验证与持续思考
         </div>
       )}
     </div>

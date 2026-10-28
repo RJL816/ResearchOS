@@ -22,7 +22,6 @@ const { createServer } = require("node:net");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
-const fsp = require("node:fs/promises");
 
 const isDev = !app.isPackaged;
 const ROOT = path.join(__dirname, "..");
@@ -38,6 +37,11 @@ let backendProcess = null;
 let backendPort = 8000;
 let apiBase = null;
 let mainWindow = null;
+let updateState = { status: "idle", version: null, percent: null, error: null };
+function setUpdateState(patch) {
+  updateState = { ...updateState, ...patch };
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:update-status", updateState);
+}
 
 // ---------------------------------------------------------------- backend
 
@@ -62,10 +66,15 @@ function startBackendSidecar(port) {
     console.warn("[research-os] sidecar not found; expecting dev backend on :18610");
     return null;
   }
-  const child = spawn(BACKEND_EXE, ["--port", String(port)], {
+  const child = spawn(BACKEND_EXE, ["--port", String(port), "--monitor-parent", "--parent-pid", String(process.pid)], {
+    env: { ...process.env,
+      RESEARCH_OS_DATA_DIR: process.env.RESEARCH_OS_DATA_DIR || path.join(app.getPath("userData"), "data"),
+      RESEARCH_OS_LEGACY_DATA_DIR: path.join(path.dirname(BACKEND_EXE), "data") },
     windowsHide: true,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
+  child.on("error", (err) => console.error("[sidecar] failed to start", err));
+  child.stdin.on("error", () => {}); // The process may have exited before shutdown.
   child.stdout.on("data", (d) => console.log(`[sidecar] ${d}`));
   child.stderr.on("data", (d) => console.error(`[sidecar] ${d}`));
   return child;
@@ -109,12 +118,13 @@ function resolveExportFile(urlPath) {
     candidates.push(clean);
     candidates.push(`${clean}.html`);
     const segments = clean.split("/").map((s) => (/^\d+$/.test(s) ? "app" : s));
+    candidates.push(segments.join("/"));
     candidates.push(`${segments.join("/")}.html`);
   }
   candidates.push("index.html");
   for (const candidate of candidates) {
     const full = path.join(FRONTEND_DIST, candidate);
-    if (full.startsWith(FRONTEND_DIST) && fs.existsSync(full) && fs.statSync(full).isFile()) {
+    if (full.startsWith(FRONTEND_DIST + path.sep) && fs.existsSync(full) && fs.statSync(full).isFile()) {
       return full;
     }
   }
@@ -129,10 +139,15 @@ async function initAutoUpdater(win) {
     const { autoUpdater: updater } = require("electron-updater");
     autoUpdater = updater;
     updater.autoDownload = true;
+    updater.on("checking-for-update", () => setUpdateState({ status: "checking", error: null, percent: null }));
+    updater.on("update-available", (info) => setUpdateState({ status: "downloading", version: info.version, error: null }));
+    updater.on("update-not-available", (info) => setUpdateState({ status: "current", version: info.version, error: null }));
+    updater.on("download-progress", (info) => setUpdateState({ status: "downloading", percent: Math.round(info.percent) }));
     updater.on("update-downloaded", (info) => {
+      setUpdateState({ status: "downloaded", version: info.version, percent: 100, error: null });
       win?.webContents.send("desktop:update-downloaded", info.version);
     });
-    updater.on("error", (err) => console.error("[updater]", err));
+    updater.on("error", (err) => { console.error("[updater]", err); setUpdateState({ status: "error", error: err.message }); });
     updater.checkForUpdatesAndNotify().catch(() => {});
     setInterval(() => updater.checkForUpdates().catch(() => {}), 60 * 60 * 1000); // hourly
   } catch (err) {
@@ -143,7 +158,8 @@ async function initAutoUpdater(win) {
 // ---------------------------------------------------------------- window
 
 async function createWindow() {
-  backendPort = await findFreePort(18610);
+  process.env.DESKTOP_APP_VERSION = APP_VERSION;
+  backendPort = fs.existsSync(BACKEND_EXE) ? await findFreePort(18610) : 18610;
   backendProcess = startBackendSidecar(backendPort);
   const backendReady = await waitForBackend(backendPort);
   console.log(`[research-os] backend ${backendReady ? "ready" : "NOT ready"} on :${backendPort}`);
@@ -178,6 +194,14 @@ async function createWindow() {
 registerAppProtocol();
 
 app.whenReady().then(() => {
+  const { ipcMain } = require("electron");
+  ipcMain.handle("desktop:get-update-status", () => updateState);
+  ipcMain.handle("desktop:check-for-updates", async () => {
+    if (!autoUpdater) return null;
+    const result = await autoUpdater.checkForUpdates();
+    return result ? { version: result.updateInfo.version } : null;
+  });
+  ipcMain.handle("desktop:install-update", () => autoUpdater?.quitAndInstall());
   protocol.handle(SCHEME, async (request) => {
     const file = resolveExportFile(new URL(request.url).pathname);
     const response = await net.fetch(`file://${file.replaceAll("\\", "/")}`);
@@ -201,11 +225,36 @@ app.whenReady().then(() => {
   });
 });
 
-app.on("window-all-closed", () => {
-  if (backendProcess) backendProcess.kill();
-  app.quit();
-});
+app.on("window-all-closed", () => app.quit());
 
-app.on("before-quit", () => {
-  if (backendProcess) backendProcess.kill();
+let shutdownStarted = false;
+app.on("before-quit", (event) => {
+  if (shutdownStarted || !backendProcess || backendProcess.exitCode !== null) return;
+  event.preventDefault();
+  shutdownStarted = true;
+  const child = backendProcess;
+  // Closing stdin lets the actual Python server shut down gracefully. PyInstaller
+  // one-file builds use a bootloader plus a worker, so killing only child.pid
+  // can leave the worker running.
+  child.stdin.end();
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timeout);
+    app.quit();
+  };
+  child.once("exit", finish);
+  const timeout = setTimeout(() => {
+    if (child.exitCode === null && child.pid) {
+      if (process.platform === "win32") {
+        const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { windowsHide: true, stdio: "ignore" });
+        killer.on("error", () => { child.kill(); finish(); });
+        killer.on("exit", finish);
+      } else {
+        child.kill();
+        finish();
+      }
+    } else finish();
+  }, 5000);
 });

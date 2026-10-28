@@ -1,26 +1,14 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
-import { cn } from "@/lib/utils";
+import "katex/dist/katex.min.css";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Topbar } from "@/components/topbar";
 import { ProjectProvider } from "@/components/project-context";
 import { ThemeInitScript, ThemeProvider } from "@/components/theme";
 import { ToastProvider } from "@/components/toast";
 import { CommandPalette } from "@/components/command-palette";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { DesktopNavigation } from "@/lib/navigation";
 
 export const metadata: Metadata = {
   title: "Research OS",
@@ -32,14 +20,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="zh-CN"
       suppressHydrationWarning
-      className={cn(
-        "h-full",
-        "antialiased",
-        geistSans.variable,
-        geistMono.variable,
-        "font-sans",
-        inter.variable,
-      )}
+      className="h-full antialiased font-sans"
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: ThemeInitScript }} />
@@ -49,6 +30,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <ToastProvider>
             <Suspense fallback={children}>
               <ProjectProvider>
+                <DesktopNavigation />
                 <CommandPalette />
                 <AppSidebar />
                 <div className="flex min-w-0 flex-1 flex-col">
