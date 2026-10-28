@@ -59,7 +59,7 @@ function findFreePort(startFrom) {
 function startBackendSidecar(port) {
   if (!fs.existsSync(BACKEND_EXE)) {
     // Dev mode: assume a backend is already running on :8000 (uvicorn).
-    console.warn("[research-os] sidecar not found; expecting dev backend on :8000");
+    console.warn("[research-os] sidecar not found; expecting dev backend on :18610");
     return null;
   }
   const child = spawn(BACKEND_EXE, ["--port", String(port)], {
@@ -143,7 +143,7 @@ async function initAutoUpdater(win) {
 // ---------------------------------------------------------------- window
 
 async function createWindow() {
-  backendPort = await findFreePort(8000);
+  backendPort = await findFreePort(18610);
   backendProcess = startBackendSidecar(backendPort);
   const backendReady = await waitForBackend(backendPort);
   console.log(`[research-os] backend ${backendReady ? "ready" : "NOT ready"} on :${backendPort}`);

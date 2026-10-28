@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Research OS API"
     database_url: str = "sqlite:///./research_os.db"
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,app://research-os.local"
 
     # GLM runtime credentials — the APPLICATION's own key/plan, entirely
     # separate from any coding-agent subscription used during development.

@@ -38,6 +38,9 @@ def main() -> None:
         "uvicorn",
         "--collect-all",
         "sqlalchemy",
+        "--add-data",
+        str(ROOT / "alembic") + ";alembic",
+
         "--hidden-import",
         "uvicorn.logging",
         "--hidden-import",
