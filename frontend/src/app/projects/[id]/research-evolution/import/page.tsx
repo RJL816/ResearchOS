@@ -1,5 +1,5 @@
 import { Suspense } from "react";
 import { RouteBoundary } from "@/lib/navigation";
-import { ResearchEvolutionImport } from "@/components/research-evolution-import";
+import ResearchIdeaList from "@/components/research-idea-list";
 export function generateStaticParams() { return [{id:"app"}]; }
-export default function Page() { return <Suspense fallback={<div>正在打开…</div>}><RouteBoundary><ResearchEvolutionImport /></RouteBoundary></Suspense>; }
+export default function Page() { return <Suspense fallback={<div>正在打开…</div>}><RouteBoundary><ResearchIdeaList initialMode="import" /></RouteBoundary></Suspense>; }
