@@ -1,0 +1,45 @@
+{
+  "name": "research-os-desktop",
+  "productName": "Research OS",
+  "version": "0.4.0",
+  "description": "Research OS desktop shell — personal research workspace for AI/ML researchers",
+  "private": true,
+  "main": "main.cjs",
+  "author": "Research OS",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable",
+    "release": "electron-builder --win nsis --publish always"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.0"
+  },
+  "build": {
+    "appId": "com.researchos.desktop",
+    "productName": "Research OS",
+    "directories": { "output": "release" },
+    "files": ["main.cjs", "preload.cjs", "web/**/*"],
+    "extraResources": [
+      { "from": "../backend/dist/sidecar", "to": "sidecar" }
+    ],
+    "win": {
+      "target": ["nsis"],
+      "artifactName": "ResearchOS-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "RJL816",
+      "repo": "ResearchOS"
+    }
+  }
+}

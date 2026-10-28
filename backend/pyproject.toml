@@ -1,0 +1,10 @@
+[project]
+name = "research-os-backend"
+version = "0.1.0"
+description = "Research OS backend API (FastAPI + SQLAlchemy + SQLite)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
