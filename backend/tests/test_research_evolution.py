@@ -179,11 +179,46 @@ def test_retry_reuses_only_completed_segments(client, monkeypatch):
     source={'filename':'retry.md','content':'甲'*8}
     first=client.post(f'/api/projects/{project}/research-evolution/parse', json=source)
     assert first.status_code==422 and '已完成的分段' in first.json()['detail']
+    # The backend process may have stopped; only the database survives.
+    evolution_checkpoints._reports.clear()
+    history = client.get(f'/api/projects/{project}/research-evolution/history').json()
+    assert len(history) == 1 and history[0]['status'] == 'incomplete'
+    restored = client.get(f'/api/projects/{project}/research-evolution/history/{history[0]["id"]}').json()
+    assert restored['content'] == source['content'] and restored['result'] is None
     second=client.post(f'/api/projects/{project}/research-evolution/parse', json=source)
     assert second.status_code==200 and len(second.json()['draft']['ideas'])==2
     assert second.json()['reused_segments']==1
     assert calls==[1,2,2]
     assert not evolution_checkpoints._reports
+
+
+def test_history_restores_review_and_prevents_repeated_model_calls(client, monkeypatch):
+    project = client.post('/api/projects', json={'name':'history review'}).json()['id']
+    other = client.post('/api/projects', json={'name':'other history'}).json()['id']
+    calls = []
+    class Fake:
+        base_url='https://history.test'; model='mock'
+        def chat(self, system, user):
+            calls.append(user)
+            return json.dumps({'ideas':[{'local_ref':'idea-1','title':'方案'}]}, ensure_ascii=False)
+    monkeypatch.setattr('app.routers.research_evolution.get_glm_client', lambda: Fake())
+    source={'filename':'history.md','content':'历史报告'}
+    first=client.post(f'/api/projects/{project}/research-evolution/parse', json=source).json()
+    first['draft']['ideas'][0]['title']='修改后的名称'
+    saved=client.put(f'/api/projects/{project}/research-evolution/history', json={**source,'source_hash':first['source_hash'],'result':first})
+    assert saved.status_code == 200
+    item=client.get(f'/api/projects/{project}/research-evolution/history').json()[0]
+    assert item['status']=='review'
+    restored=client.get(f'/api/projects/{project}/research-evolution/history/{item["id"]}').json()
+    assert restored['result']['draft']['ideas'][0]['title']=='修改后的名称'
+    assert client.get(f'/api/projects/{other}/research-evolution/history/{item["id"]}').status_code==404
+    again=client.post(f'/api/projects/{project}/research-evolution/parse', json=source).json()
+    assert again['draft']['ideas'][0]['title']=='修改后的名称' and len(calls)==1
+    applied=client.post(f'/api/projects/{project}/research-evolution/apply', json={**source,'source_hash':again['source_hash'],'draft':again['draft']})
+    assert applied.status_code==201
+    assert client.get(f'/api/projects/{project}/research-evolution/history').json()[0]['status']=='imported'
+    assert client.put(f'/api/projects/{project}/research-evolution/history', json={**source,'source_hash':first['source_hash'],'result':first}).status_code==409
+    assert client.post(f'/api/projects/{project}/research-evolution/parse', json=source).status_code==409
 
 
 def test_repeated_run_keeps_later_details_and_conflicting_metrics_are_not_guessed(client, monkeypatch):

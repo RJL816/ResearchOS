@@ -92,4 +92,4 @@ def test_analyze_requires_runtime_key(client, monkeypatch):
     conv = _import(client, content="user: hi").json()["conversation"]
     resp = client.post(f"/api/conversations/{conv['id']}/analyze")
     assert resp.status_code == 503
-    assert "GLM_API_KEY" in resp.json()["detail"]
+    assert "LLM API 密钥" in resp.json()["detail"]

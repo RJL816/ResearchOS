@@ -724,6 +724,11 @@ export interface EvolutionParse {draft:EvolutionDraft; source_hash:string; segme
 export const getEvolutionPrompt = () => request<{prompt:string}>("/api/research-evolution/prompt");
 export const parseEvolution = (id:number,filename:string,content:string) => request<EvolutionParse>(`/api/projects/${id}/research-evolution/parse`,{method:"POST",body:JSON.stringify({filename,content})});
 export const applyEvolution = (id:number,filename:string,content:string,parsed:EvolutionParse) => request<{counts:Record<string,number>;idea_ids:number[]}>(`/api/projects/${id}/research-evolution/apply`,{method:"POST",body:JSON.stringify({filename,content,source_hash:parsed.source_hash,draft:parsed.draft})});
+export interface EvolutionHistory {id:number; filename:string; source_hash:string; updated_at:string; status:"incomplete"|"review"|"imported"}
+export const getEvolutionHistory = (id:number) => request<EvolutionHistory[]>(`/api/projects/${id}/research-evolution/history`);
+export const getEvolutionHistoryItem = (id:number,historyId:number) => request<{filename:string;content:string;result:EvolutionParse|null;imported:boolean}>(`/api/projects/${id}/research-evolution/history/${historyId}`);
+export const saveEvolutionReview = (id:number,filename:string,content:string,result:EvolutionParse) => request<{ok:boolean}>(`/api/projects/${id}/research-evolution/history`,{method:"PUT",body:JSON.stringify({source_hash:result.source_hash,filename,content,result})});
+export const diagnoseEvolution = (id:number,content:string,parsed:EvolutionParse,issues:string[]) => request<{advice:string}>(`/api/projects/${id}/research-evolution/diagnose`,{method:"POST",body:JSON.stringify({content,draft:parsed.draft,issues})});
 
 
 export type ParseJobKind = "evolution" | "proposal" | "agent" | "agent_auto";

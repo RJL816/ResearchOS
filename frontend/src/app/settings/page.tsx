@@ -150,7 +150,7 @@ export default function SettingsPage() {
           <ul className="text-muted-foreground list-disc space-y-1 pl-4 text-xs leading-relaxed">
             <li>单次导入对话不超过 200,000 字符 / 500 条消息（可在后端环境变量调整）</li>
             <li>上传文件支持 .md / .markdown / .txt / .json，大小 ≤ 2MB，UTF-8 编码</li>
-            <li>长对话按 12,000 字符分段送入 GLM，分段保留全局消息顺序</li>
+            <li>长对话按 12,000 字符分段送入 LLM，分段保留全局消息顺序</li>
             <li>发送前自动遮蔽疑似密钥；对话内容仅作为数据分析，不会执行</li>
           </ul>
         </CardContent>

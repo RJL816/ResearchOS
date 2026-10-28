@@ -165,7 +165,7 @@ export default function ConversationsView() {
           导入 AI 科研对话
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          粘贴或上传与 AI 的研究讨论，由 GLM 提取研究事件并生成待审核的图谱变更。
+          粘贴或上传与 AI 的研究讨论，由 LLM 提取研究事件并生成待审核的图谱变更。
         </p>
       </div>
 
@@ -180,7 +180,7 @@ export default function ConversationsView() {
         <CardHeader>
           <CardTitle className="text-card-title">第一步：导入对话</CardTitle>
           <CardDescription>
-            对话内容仅作为数据存储与分析，不会被执行；发送给 GLM 前会自动遮蔽疑似密钥，并按长度分段。
+            对话内容仅作为数据存储与分析，不会被执行；发送给 LLM 前会自动遮蔽疑似密钥，并按长度分段。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -269,7 +269,7 @@ export default function ConversationsView() {
               {preview && (
                 <div className="text-muted-foreground flex items-center gap-2 text-xs">
                   <ShieldCheck className="text-success size-4" />
-                  将发送 {preview.segment_count} 段（每段 ≤{preview.segment_max_chars} 字符）给 GLM；
+                  将发送 {preview.segment_count} 段（每段 ≤{preview.segment_max_chars} 字符）给 LLM；
                   已遮蔽 {preview.masked_chars} 处疑似密钥。
                 </div>
               )}

@@ -26,8 +26,7 @@ class GlmClient:
         self.api_key = api_key if api_key is not None else settings.glm_api_key
         if not self.api_key:
             raise GlmNotConfigured(
-                "GLM 运行时凭证未配置：请在 backend/.env 设置 RESEARCH_OS_GLM_API_KEY"
-                "（应用自己的 GLM 凭证，与开发所用 Coding Agent 套餐相互独立、不共享额度）"
+                "尚未配置 LLM API 密钥，请在设置中填写模型配置。"
             )
         self.base_url = (base_url or settings.glm_base_url).rstrip("/")
         self.model = model or settings.glm_model
@@ -36,8 +35,7 @@ class GlmClient:
     def chat(self, system: str, user: str, temperature: float = 0.2) -> str:
         if not self.api_key:
             raise GlmNotConfigured(
-                "GLM_API_KEY 未配置：请在 backend/.env 设置应用运行时自己的 GLM 凭证"
-                "（与开发所用 Coding Agent 套餐相互独立）"
+                "尚未配置 LLM API 密钥，请在设置中填写模型配置。"
             )
         payload = {
             "model": self.model,
@@ -56,17 +54,17 @@ class GlmClient:
                 trust_env=False,
             )
         except httpx.TimeoutException as exc:
-            raise GlmError(f"GLM 请求超时（>{self.timeout}s）：{exc}") from exc
+            raise GlmError(f"LLM 请求超时（>{self.timeout}s）：{exc}") from exc
         except httpx.HTTPError as exc:
-            raise GlmError(f"GLM 请求失败：{exc}") from exc
+            raise GlmError(f"LLM 请求失败：{exc}") from exc
         if response.status_code != 200:
-            raise GlmError(f"GLM 返回 HTTP {response.status_code}: {response.text[:300]}")
+            raise GlmError(f"LLM 返回 HTTP {response.status_code}: {response.text[:300]}")
         try:
             content = response.json()["choices"][0]["message"]["content"]
         except (KeyError, IndexError, ValueError) as exc:
-            raise GlmError(f"GLM 响应格式异常：{response.text[:300]}") from exc
+            raise GlmError(f"LLM 响应格式异常：{response.text[:300]}") from exc
         if not isinstance(content, str) or not content.strip():
-            raise GlmError("GLM 返回了空内容")
+            raise GlmError("LLM 返回了空内容")
         return content
 
 

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
         validation_alias="RESEARCH_OS_GLM_BASE_URL",
     )
     glm_model: str = Field(default="glm-4-flash", validation_alias="RESEARCH_OS_GLM_MODEL")
-    glm_timeout_seconds: float = Field(default=60.0, validation_alias="RESEARCH_OS_GLM_TIMEOUT_SECONDS")
+    glm_timeout_seconds: float = Field(default=180.0, validation_alias="RESEARCH_OS_GLM_TIMEOUT_SECONDS")
     glm_json_parse_retries: int = Field(default=2, validation_alias="RESEARCH_OS_GLM_JSON_PARSE_RETRIES")
 
     # Conversation import limits (configurable; oversize input is rejected,

@@ -16,7 +16,7 @@ export function ModelSettingsCard() {
     catch (err) { setMessage(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   }
-  return <Card><CardHeader><CardTitle className="text-card-title">模型 API</CardTitle><CardDescription>用于解析助手整理的内容，也可用于对话分析。支持兼容 Chat Completions 的服务。</CardDescription></CardHeader><CardContent className="space-y-3">
+  return <Card><CardHeader><CardTitle className="text-card-title">LLM 模型 API</CardTitle><CardDescription>用于解析助手整理的内容，也可用于对话分析。支持兼容 Chat Completions 的服务。</CardDescription></CardHeader><CardContent className="space-y-3">
     <p className="text-sm">{info?.configured ? "已配置" : "尚未配置"}{info?.temporary ? " · 本次运行有效" : ""}</p>
     <label className="space-y-1 text-sm">API 基础地址<Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…/v1" /></label>
     <label className="space-y-1 text-sm">模型名称<Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="模型名称" /></label>

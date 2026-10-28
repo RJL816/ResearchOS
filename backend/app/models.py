@@ -153,6 +153,19 @@ class ResearchEvolutionImport(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
+class EvolutionParseHistory(Base, TimestampMixin):
+    __tablename__ = "evolution_parse_history"
+    __table_args__ = (UniqueConstraint("project_id", "content_hash", name="uq_evolution_parse_history_source"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    filename: Mapped[str] = mapped_column(String(300), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    result_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    checkpoints_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    imported: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
 class ResearchConclusion(Base, TimestampMixin):
     __tablename__ = "research_conclusions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
