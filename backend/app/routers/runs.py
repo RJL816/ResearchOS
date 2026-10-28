@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .. import schemas, services
 from ..database import get_db
-from ..models import ExperimentRun, MetricPoint, Project
+from ..models import ExperimentRun, MetricPoint, Project, ResearchEvolutionEdge
 
 router = APIRouter(prefix="/api", tags=["runs"])
 
@@ -101,6 +101,10 @@ def update_run(run_id: int, data: schemas.RunUpdate, db: Session = Depends(get_d
 @router.delete("/runs/{run_id}", status_code=204)
 def delete_run(run_id: int, db: Session = Depends(get_db)):
     run = services.get_object_or_404(db, ExperimentRun, run_id, "ExperimentRun")
+    for edge in db.scalars(select(ResearchEvolutionEdge).where(ResearchEvolutionEdge.project_id == run.project_id)):
+        run_ids = json.loads(edge.linked_run_ids)
+        if run_id in run_ids:
+            edge.linked_run_ids = json.dumps([item for item in run_ids if item != run_id])
     db.delete(run)
     db.commit()
     return None

@@ -118,7 +118,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="updates">
         <CardHeader>
           <CardTitle className="text-card-title">关于与更新</CardTitle>
         </CardHeader>

@@ -120,8 +120,8 @@ export default function IdeaDetailPage() {
             <Link
               href={
                 idea.current_version_id
-                  ? `/projects/${idea.project_id}/ideas/graph?node=${idea.current_version_id}`
-                  : `/projects/${idea.project_id}/ideas/graph`
+                  ? `/projects/${idea.project_id}/hypotheses/graph?node=${idea.current_version_id}`
+                  : `/projects/${idea.project_id}/hypotheses/graph`
               }
             >
               <GitBranch className="size-4" />

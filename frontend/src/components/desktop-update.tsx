@@ -8,10 +8,16 @@ export function DesktopUpdate() {
   const [state, setState] = useState<UpdateState | null>(null);
   useEffect(() => {
     const desktop = (window as unknown as {desktop?: DesktopBridge}).desktop;
-    if (!desktop?.isDesktop || !desktop.getUpdateStatus) return;
+    if (!desktop?.isDesktop) return;
     let active = true;
-    const unsubscribe = desktop.onUpdateStatus?.((value) => { if (active) setState(value); });
-    void desktop.getUpdateStatus().then((value) => { if (active) setState(value); }).catch(() => {});
+    let received = false;
+    const unsubscribe = desktop.onUpdateStatus?.((value) => { received = true; if (active) setState(value); });
+    if (desktop.getUpdateStatus) {
+      void desktop.getUpdateStatus().then((value) => { if (active && !received) setState(value); }).catch((err) => { if (active && !received) setState({status:"error",version:null,percent:null,error:String(err)}); });
+    } else {
+      // Older installations may not expose update-status IPC yet.
+      void Promise.resolve().then(() => { if (active) setState({status:"error",version:null,percent:null,error:"当前安装版未提供更新状态，请先安装最新版。"}); });
+    }
     return () => { active = false; unsubscribe?.(); };
   }, []);
   async function check() {

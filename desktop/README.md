@@ -51,7 +51,7 @@ npm run dist        # 产出 release/ResearchOS-Setup-<version>.exe
    electron-builder 会构建 NSIS 安装包 + `latest.yml` 并上传到 GitHub Releases（草稿）。
 4. 已安装的客户端启动时及每小时自动检查 Release；下载完成后通过 Toast/设置页提示「重启以更新」。
 
-> 更新只替换 Electron 外壳与前端；用户数据库保存在应用数据目录，升级不迁移不覆盖。
+> 更新会替换桌面程序及后端。数据库保存在应用数据目录；需要升级数据库结构时，应用会先在数据目录的 `backups` 中创建备份，再执行迁移。
 
 ## 日常开发
 

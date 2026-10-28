@@ -88,7 +88,7 @@ export function CommandPalette() {
       ...(pid
         ? ([
             { label: "实验台", hint: "导航", icon: FlaskConical, action: () => go(`/projects/${pid}/experiments`), keywords: "experiments runs" },
-            { label: "假设演化图谱", hint: "导航", icon: GitBranch, action: () => go(`/projects/${pid}/ideas/graph`), keywords: "graph evolution" },
+            { label: "Idea 演化图谱", hint: "导航", icon: GitBranch, action: () => go(`/projects/${pid}/ideas/graph`), keywords: "graph evolution" },
             { label: "研究时间线", hint: "导航", icon: ScrollText, action: () => go(`/projects/${pid}/timeline`), keywords: "timeline history" },
             { label: "对话导入", hint: "导航", icon: MessageSquareText, action: () => go(`/projects/${pid}/conversations`), keywords: "conversation import" },
             { label: "Agent 导入", hint: "导航", icon: NotebookPen, action: () => go(`/projects/${pid}/agent-import`), keywords: "agent prompt structured" },

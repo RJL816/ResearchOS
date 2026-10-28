@@ -270,7 +270,7 @@ function OverviewContent() {
                   </ul>
                 )}
                 <Link
-                  href={`/projects/${projectId}/ideas/graph`}
+                  href={`/projects/${projectId}/hypotheses/graph`}
                   className="text-primary mt-2 inline-flex items-center gap-1 text-xs hover:underline"
                 >
                   在演化图谱中查看全部

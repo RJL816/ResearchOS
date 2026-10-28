@@ -51,7 +51,7 @@ const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
       { href: null, label: "项目工作台", icon: BookOpenText, needsProject: true },
       { href: null, label: "研究 Idea", icon: Lightbulb, needsProject: true },
       { href: null, label: "实验", icon: FlaskConical, needsProject: true }, // /projects/{id}/experiments
-      { href: null, label: "假设演化", icon: GitBranch, needsProject: true },
+      { href: null, label: "Idea 演化", icon: GitBranch, needsProject: true },
       { href: null, label: "研究时间线", icon: ScrollText, needsProject: true },
     ],
   },
@@ -107,7 +107,7 @@ export function AppSidebar() {
             href: projectHref(
               item.label === "项目工作台" ? "" : item.label === "研究 Idea" ? "/research-ideas" : item.label === "实验"
                 ? "/experiments"
-                : item.label === "假设演化"
+                : item.label === "Idea 演化"
                   ? "/ideas/graph"
                   : item.label === "研究时间线"
                     ? "/timeline"
@@ -230,6 +230,7 @@ export function AppSidebar() {
           你的研究工作台
           <br />
           记录、验证与持续思考
+          <Link href="/settings#updates" className="mt-2 block text-primary hover:underline">检查更新</Link>
         </div>
       )}
     </div>

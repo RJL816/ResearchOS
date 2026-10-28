@@ -117,7 +117,7 @@ def test_programmatic_migrations_use_the_requested_database(tmp_path):
     run_migrations("sqlite:///" + str(target))
     run_migrations("sqlite:///" + str(target))
     with sqlite3.connect(target) as db:
-        assert db.execute("select version_num from alembic_version").fetchone()[0] == "d53fa72823bc"
+        assert db.execute("select version_num from alembic_version").fetchone()[0] == "e71bf7026c91"
         assert "target_version_id" in {row[1] for row in db.execute("pragma table_info(experiment_runs)")}
         assert "is_done" in {row[1] for row in db.execute("pragma table_info(research_notes)")}
         assert db.execute("pragma foreign_key_check").fetchall() == []

@@ -40,14 +40,17 @@ class AgentImportBody(BaseModel):
 
 
 class ModelConfigBody(BaseModel):
-    api_key: str = Field(min_length=1, max_length=4096)
+    api_key: str = Field(default="", max_length=4096)
     base_url: str = Field(min_length=1, max_length=2048)
     model: str = Field(min_length=1, max_length=200)
 
 
 @router.get("/model-settings")
 def model_settings():
-    return runtime_model_status()
+    try:
+        return runtime_model_status()
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 @router.put("/model-settings")
@@ -55,9 +58,12 @@ def set_model_settings(body: ModelConfigBody):
     url = urlparse(body.base_url.strip())
     if url.scheme not in ("http", "https") or not url.hostname or url.username or url.password or url.query or url.fragment:
         raise HTTPException(422, "请输入有效的模型 API 基础地址")
-    if not body.api_key.strip() or not body.model.strip():
-        raise HTTPException(422, "请填写 API 密钥和模型名称")
-    configure_runtime_model(body.api_key.strip(), body.base_url.strip().rstrip("/"), body.model.strip())
+    if not body.model.strip():
+        raise HTTPException(422, "请填写模型名称")
+    try:
+        configure_runtime_model(body.api_key.strip(), body.base_url.strip().rstrip("/"), body.model.strip())
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(422, str(exc)) from exc
     return runtime_model_status()
 
 

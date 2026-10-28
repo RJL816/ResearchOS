@@ -43,11 +43,29 @@ def resolve_migrations_dir() -> str:
 def run_migrations(database_url: str) -> None:
     from alembic import command
     from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from sqlalchemy.engine import make_url
 
     cfg = Config()
     cfg.set_main_option("script_location", resolve_migrations_dir())
     cfg.set_main_option("sqlalchemy.url", database_url)
     cfg.attributes["database_url"] = database_url
+    url = make_url(database_url)
+    if url.get_backend_name() == "sqlite" and url.database and url.database != ":memory:":
+        import sqlite3
+        from datetime import datetime
+
+        path = Path(url.database).resolve()
+        if path.is_file() and path.stat().st_size:
+            with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as source:
+                tables = {row[0] for row in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                current = {row[0] for row in source.execute("SELECT version_num FROM alembic_version")} if "alembic_version" in tables else set()
+                if tables and current != {ScriptDirectory.from_config(cfg).get_current_head()}:
+                    backup_dir = path.parent / "backups"
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                    backup_path = backup_dir / f"{path.stem}-before-upgrade-{datetime.now():%Y%m%d-%H%M%S-%f}.db"
+                    with sqlite3.connect(backup_path) as target:
+                        source.backup(target)
     command.upgrade(cfg, "head")
 
 

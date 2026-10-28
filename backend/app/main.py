@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from .config import get_settings
-from .routers import agent, conversations, evidence, ideas, notes, projects, runs, research_ideas
+from .routers import agent, conversations, evidence, ideas, notes, projects, runs, research_ideas, research_evolution
 
 logger = logging.getLogger("research_os")
 
@@ -29,6 +29,7 @@ app.include_router(notes.router)
 app.include_router(conversations.router)
 app.include_router(agent.router)
 app.include_router(research_ideas.router)
+app.include_router(research_evolution.router)
 
 
 @app.exception_handler(IntegrityError)

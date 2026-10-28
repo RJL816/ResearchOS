@@ -20,9 +20,9 @@ export function ModelSettingsCard() {
     <p className="text-sm">{info?.configured ? "已配置" : "尚未配置"}{info?.temporary ? " · 本次运行有效" : ""}</p>
     <label className="space-y-1 text-sm">API 基础地址<Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…/v1" /></label>
     <label className="space-y-1 text-sm">模型名称<Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="模型名称" /></label>
-    <label className="space-y-1 text-sm">API 密钥<Input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="输入密钥以配置" /></label>
-    <p className="text-xs text-muted-foreground">密钥只保存在当前应用进程内，退出后需重新输入；配置后解析内容会发送到该服务。</p>
+    <label className="space-y-1 text-sm">API 密钥<Input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={info?.configured ? "留空保留现有密钥" : "输入密钥以配置"} /></label>
+    <p className="text-xs text-muted-foreground">密钥由 Windows 当前用户加密保存，重启后无需再次填写；解析内容会发送到你配置的服务。</p>
     {message && <p role="status" className="text-sm">{message}</p>}
-    <Button disabled={busy || !key.trim() || !url.trim() || !model.trim()} onClick={() => void save()}>{busy ? "保存中…" : "保存本次配置"}</Button>
+    <Button disabled={busy || (!key.trim() && !info?.configured) || !url.trim() || !model.trim()} onClick={() => void save()}>{busy ? "保存中…" : "保存模型配置"}</Button>
   </CardContent></Card>;
 }

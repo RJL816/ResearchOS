@@ -685,7 +685,8 @@ export const parseAgentContent = (projectId: number, module: AgentPromptInfo["ke
   request<AgentParseResult>(`/api/projects/${projectId}/agent-import/parse`, { method: "POST", body: JSON.stringify({ module, content, dry_run: true }) });
 
 export type ResearchSections = { background: string | null; goal: string | null; methods: string | null; innovation: string | null; theory: string | null; results: string | null; conclusions: string | null; future_plan: string | null };
-export interface ResearchIdea extends ResearchSections { id: number; project_id: number; title: string }
+export type ResearchIdeaStatus = "exploring" | "testing" | "promising" | "paused" | "abandoned" | "completed";
+export interface ResearchIdea extends ResearchSections { id: number; project_id: number; title: string; status: ResearchIdeaStatus; status_reason: string | null; decision_source: string | null; decision_time: string | null; related_evidence: string | null }
 export interface ResearchDocument { id: number; filename: string; created_at: string; content?: string }
 export interface ResearchConclusion { id: number; run_id: number | null; content: string; created_at: string }
 export interface ProposalParse { source_hash: string; sections: ResearchSections; hypotheses: { title: string; body: string }[]; segments: number; masked_count: number }
@@ -702,3 +703,24 @@ export const listResearchConclusions = (id: number) => request<ResearchConclusio
 export const addResearchConclusion = (id: number, content: string, run_id: number | null) => request<ResearchConclusion>(`/api/research-ideas/${id}/conclusions`, { method: "POST", body: JSON.stringify({content, run_id}) });
 
 export const deleteResearchConclusion = (id: number, conclusion: number) => request<void>(`/api/research-ideas/${id}/conclusions/${conclusion}`, { method: "DELETE" });
+
+export interface IdeaEvolutionEdge { id: number; source_id: number; target_id: number; relation_type: string; reason: string | null; trigger_type: string | null; trigger_description: string | null; source_references: string | null; linked_run_ids: number[] }
+export interface IdeaEvolutionGraph { project_id: number; nodes: (ResearchIdea & { run_count: number; hypothesis_count: number })[]; edges: IdeaEvolutionEdge[]; unlinked_hypotheses: number; unlinked_runs: number }
+export interface ResearchIdeaVersion { id: number; version_number: number; snapshot: ResearchIdea; change_reason: string | null; created_at: string }
+export const getResearchEvolution = (project: number) => request<IdeaEvolutionGraph>(`/api/projects/${project}/research-evolution`);
+export const getResearchVersions = (id: number) => request<ResearchIdeaVersion[]>(`/api/research-ideas/${id}/versions`);
+export type EdgeInput = Omit<IdeaEvolutionEdge, "id">;
+export const createResearchEdge = (id: number, body: EdgeInput) => request<{id:number}>(`/api/projects/${id}/research-evolution/edges`, { method: "POST", body: JSON.stringify(body) });
+export const updateResearchEdge = (id: number, body: EdgeInput) => request<{id:number}>(`/api/research-evolution/edges/${id}`, { method: "PUT", body: JSON.stringify(body) });
+export const deleteResearchEdge = (id: number) => request<{id:number}>(`/api/research-evolution/edges/${id}`, { method: "DELETE" });
+export interface EvolutionHypothesis {title: string; body: string}
+export type EvolutionRevision = Partial<ResearchSections> & {status: ResearchIdeaStatus | null; status_reason: string | null; change_reason: string | null};
+export interface EvolutionIdea extends Omit<Partial<ResearchIdea>, "status"> { versions: EvolutionRevision[]; status: ResearchIdeaStatus | null; local_ref: string; title: string; hypotheses: EvolutionHypothesis[]; action: "unresolved" | "new" | "existing" | "version" | "skip"; existing_id: number | null; candidates: number[]; change_reason: string | null }
+export interface EvolutionRun {local_ref:string; idea_ref:string; name:string; status: RunStatus | null; notes:string | null; dataset:string | null; eval_protocol:string | null; params:Record<string,unknown> | null; metrics:{name:string;step:number;value:number}[]; action:"new" | "existing" | "skip"; existing_id:number | null}
+export interface EvolutionEdgeDraft {source_ref:string; target_ref:string; relation_type:string; reason:string | null; trigger_type:string | null; trigger_description:string | null; source_references:string | null; linked_run_refs:string[]; include:boolean}
+export interface EvolutionEvidence {idea_ref:string; hypothesis_title:string; run_ref:string; verdict:"supports"|"refutes"|"inconclusive"; note:string|null; include:boolean}
+export interface EvolutionDraft {ideas:EvolutionIdea[]; runs:EvolutionRun[]; edges:EvolutionEdgeDraft[]; evidence:EvolutionEvidence[]}
+export interface EvolutionParse {draft:EvolutionDraft; source_hash:string; segments:number; masked_count:number; existing_ideas:{id:number;title:string}[]; existing_runs:{id:number;name:string}[]}
+export const getEvolutionPrompt = () => request<{prompt:string}>("/api/research-evolution/prompt");
+export const parseEvolution = (id:number,filename:string,content:string) => request<EvolutionParse>(`/api/projects/${id}/research-evolution/parse`,{method:"POST",body:JSON.stringify({filename,content})});
+export const applyEvolution = (id:number,filename:string,content:string,parsed:EvolutionParse) => request<{counts:Record<string,number>;idea_ids:number[]}>(`/api/projects/${id}/research-evolution/apply`,{method:"POST",body:JSON.stringify({filename,content,source_hash:parsed.source_hash,draft:parsed.draft})});

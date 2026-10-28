@@ -101,6 +101,11 @@ class ResearchIdea(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="exploring", server_default="exploring")
+    status_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    decision_source: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    decision_time: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    related_evidence: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     background: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     goal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     methods: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -109,6 +114,43 @@ class ResearchIdea(Base, TimestampMixin):
     results: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     conclusions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     future_plan: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class ResearchIdeaVersion(Base):
+    __tablename__ = "research_idea_versions"
+    __table_args__ = (UniqueConstraint("research_idea_id", "version_number", name="uq_research_idea_version"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    research_idea_id: Mapped[int] = mapped_column(ForeignKey("research_ideas.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    change_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+
+class ResearchEvolutionEdge(Base, TimestampMixin):
+    __tablename__ = "research_evolution_edges"
+    __table_args__ = (CheckConstraint("source_id <> target_id", name="ck_research_evolution_no_self"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("research_ideas.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[int] = mapped_column(ForeignKey("research_ideas.id", ondelete="CASCADE"), nullable=False)
+    relation_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    trigger_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    trigger_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_references: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    linked_run_ids: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+
+
+class ResearchEvolutionImport(Base):
+    __tablename__ = "research_evolution_imports"
+    __table_args__ = (UniqueConstraint("project_id", "content_hash", name="uq_research_evolution_import"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    filename: Mapped[str] = mapped_column(String(300), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
 class ResearchConclusion(Base, TimestampMixin):

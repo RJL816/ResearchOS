@@ -148,7 +148,7 @@ export default function AgentImportView() {
         </Alert>
       )}
 
-      <div className="rounded-lg border bg-card p-4 text-sm">整理完整研究 Idea 或导入方案 Markdown？ <Link className="text-primary underline" href={`/projects/${projectId}/research-ideas`}>进入研究 Idea 工作区</Link></div>
+      <div className="rounded-lg border bg-card p-4 text-sm">整理过去讨论中的多个 Idea 和演化原因？ <Link className="text-primary underline" href={`/projects/${projectId}/research-evolution/import`}>导入科研演化报告</Link>；也可以 <Link className="text-primary underline" href={`/projects/${projectId}/research-ideas`}>整理单个 Idea</Link>。</div>
       {/* step 1: pick module + copy prompt */}
       <Card>
         <CardHeader>

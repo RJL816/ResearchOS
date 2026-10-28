@@ -70,22 +70,24 @@ class GlmClient:
         return content
 
 
-_runtime_config: dict[str, str] = {}
-
-
 def configure_runtime_model(api_key: str, base_url: str, model: str) -> None:
-    _runtime_config.clear()
-    _runtime_config.update(api_key=api_key, base_url=base_url, model=model)
+    from .secret_store import save_config, load_config
+    api_key = api_key or load_config().get("api_key") or get_settings().glm_api_key
+    if not api_key:
+        raise GlmNotConfigured("请填写模型 API 密钥")
+    save_config({"api_key": api_key, "base_url": base_url, "model": model})
 
 
 def runtime_model_status() -> dict:
+    from .secret_store import load_config
+    config = load_config()
     settings = get_settings()
-    return {"configured": bool(_runtime_config.get("api_key") or settings.glm_api_key),
-            "base_url": _runtime_config.get("base_url") or settings.glm_base_url,
-            "model": _runtime_config.get("model") or settings.glm_model,
-            "temporary": bool(_runtime_config)}
+    return {"configured": bool(config.get("api_key") or settings.glm_api_key),
+            "base_url": config.get("base_url") or settings.glm_base_url,
+            "model": config.get("model") or settings.glm_model,
+            "temporary": False, "persisted": bool(config)}
 
 
 def get_glm_client() -> GlmClient:
-    """Factory hook; tests monkeypatch this to inject a mock client."""
-    return GlmClient(**_runtime_config)
+    from .secret_store import load_config
+    return GlmClient(**load_config())

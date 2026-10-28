@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 
 const SEGMENT_LABELS: Record<string, string> = {
   "research-ideas": "研究 Idea",
+  hypotheses: "假设",
   experiments: "实验",
   compare: "对比",
   ideas: "假设",
@@ -89,6 +90,10 @@ function buildCrumbs(pathname: string, projectId: number | null, projectName: st
 
   if (projectId !== null) crumbs.push({ label: projectName ?? `项目 #${projectId}`, href: `/projects/${projectId}` });
   const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] === "projects" && parts[2] === "ideas" && parts[3] === "graph") {
+    crumbs.push({ label: "Idea 演化图谱", href: null });
+    return crumbs;
+  }
   if (["ideas", "runs", "analysis", "research-ideas"].includes(parts[0])) {
     crumbs.push({ label: SEGMENT_LABELS[parts[0]], href: null });
   } else {

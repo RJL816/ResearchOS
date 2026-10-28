@@ -263,7 +263,7 @@ function ReviewInner() {
               ? `被拦截：${applyResult.blocked.map((b) => `#${b.proposal_id} ${b.reason}`).join("；")}`
               : "变更已写入图谱，可在演化图谱中查看，节点详情可追溯本会话。"}
           </AlertDescription>
-          <div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm"><Link href={`/projects/${job.project_id}`}>查看更新后的研究记录</Link></Button><Button asChild size="sm" variant="outline"><Link href={`/projects/${job.project_id}/ideas/graph${applyResult.applied.find((p) => p.version_id)?.version_id ? `?node=${applyResult.applied.find((p) => p.version_id)?.version_id}` : ""}`}>在图谱中定位</Link></Button></div>
+          <div className="mt-3 flex flex-wrap gap-2"><Button asChild size="sm"><Link href={`/projects/${job.project_id}`}>查看更新后的研究记录</Link></Button><Button asChild size="sm" variant="outline"><Link href={`/projects/${job.project_id}/hypotheses/graph${applyResult.applied.find((p) => p.version_id)?.version_id ? `?node=${applyResult.applied.find((p) => p.version_id)?.version_id}` : ""}`}>在图谱中定位</Link></Button></div>
         </Alert>
       )}
 

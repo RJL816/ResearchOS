@@ -56,10 +56,15 @@ def test_module_rejects_unrelated_records(client, monkeypatch):
     assert client.get(f"/api/projects/{project}/runs").json() == []
 
 
-def test_model_settings_never_returns_secret(client, monkeypatch):
-    from app.ai import client as model_client
-    monkeypatch.setattr(model_client, "_runtime_config", {})
+def test_model_settings_never_returns_secret(client, monkeypatch, tmp_path):
+    from app.ai import secret_store
+    monkeypatch.setattr(secret_store, "config_path", lambda: tmp_path / "model-config.dpapi")
     r = client.put("/api/model-settings", json={"api_key": "my-secret-key", "base_url": "https://example.test/v1", "model": "test"})
     assert r.status_code == 200 and r.json()["configured"]
     assert "my-secret-key" not in r.text
     assert "my-secret-key" not in client.get("/api/model-settings").text
+    assert b"my-secret-key" not in (tmp_path / "model-config.dpapi").read_bytes()
+    assert secret_store.load_config()["api_key"] == "my-secret-key"
+    again = client.put("/api/model-settings", json={"api_key": "", "base_url": "https://example.test/v1", "model": "new-model"})
+    assert again.status_code == 200 and secret_store.load_config()["api_key"] == "my-secret-key"
+    assert secret_store.load_config()["model"] == "new-model"
