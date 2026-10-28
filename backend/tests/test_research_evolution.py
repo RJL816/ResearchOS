@@ -82,3 +82,28 @@ def test_failed_import_rolls_back_everything(client, monkeypatch):
     assert client.delete(f'/api/research-evolution/edges/{edge}').status_code == 200
     graph = client.get(f'/api/projects/{project}/research-evolution').json()
     assert len(graph['nodes']) == 2 and graph['edges'] == []
+
+
+def test_model_format_variations_are_preserved_for_review(client, monkeypatch):
+    project = client.post('/api/projects', json={'name': 'format variations'}).json()['id']
+    model_output = {
+        'ideas': [{'local_ref':'a','title':'历史候选', 'status':'历史候选/统计对照，未被证实有效', 'related_evidence':['run-01','run-02'], 'versions':[{'methods':'旧方案','status':'被后续版本替代'}]}],
+        'runs':[{'local_ref':'run-01','idea_ref':'a','name':'历史实验','status':'completed','params':'控制叶大小、先验和回退'}],
+        'edges':[{'source_ref':'a','target_ref':'b','source_references':['S02 §6','方案.md']}],
+        'evidence':[{'idea_ref':'a','hypothesis_title':'假设','run_ref':'run-01','verdict':'uncertain'}],
+    }
+    class Fake:
+        def chat(self, system, user): return json.dumps(model_output, ensure_ascii=False)
+    monkeypatch.setattr('app.routers.research_evolution.get_glm_client', lambda: Fake())
+    result = client.post(f'/api/projects/{project}/research-evolution/parse', json={'filename':'report.md','content':'源报告'})
+    assert result.status_code == 200, result.text
+    output = result.json()
+    idea, run = output['draft']['ideas'][0], output['draft']['runs'][0]
+    assert idea['status'] is None and '历史候选/统计对照，未被证实有效' in idea['status_reason']
+    assert idea['related_evidence'] == 'run-01\nrun-02'
+    assert idea['versions'][0]['status'] is None and '被后续版本替代' in idea['versions'][0]['status_reason']
+    assert run['status'] is None and run['action'] == 'skip' and 'completed' in run['notes']
+    assert run['params'] == {'原始参数说明':'控制叶大小、先验和回退'}
+    assert output['draft']['edges'][0]['source_references'] == 'S02 §6\n方案.md'
+    assert output['draft']['evidence'][0]['verdict'] == 'inconclusive'
+    assert output['warnings']

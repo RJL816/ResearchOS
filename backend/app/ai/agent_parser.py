@@ -4,6 +4,7 @@ import json
 from pydantic import ValidationError
 from ..importers.agent_import import AgentEnvelope, MAX_CONTENT_CHARS, parse_envelope
 from ..importers.conversation import mask_sensitive
+from . import progress
 
 FIELDS = {"session": {"ideas", "idea_versions", "runs", "evidence", "notes"},
           "idea": {"ideas", "idea_versions", "notes"}, "run": {"runs", "notes"},
@@ -44,7 +45,9 @@ def parse_agent_text(content: str, module: str, client, max_chars: int, retries:
     chunks = split_text(masked, max_chars)
     merged = {"version": 1, "ideas": [], "idea_versions": [], "runs": [], "evidence": [], "notes": []}
     refs = {"idea": {}, "run": {}}
+    progress.report(0, len(chunks), "准备解析")
     for index, chunk in enumerate(chunks, 1):
+        progress.report(index-1, len(chunks), f"正在解析第 {index}/{len(chunks)} 段")
         prior = {kind: list(mapping.values()) for kind, mapping in refs.items()}
         prompt = f"任务：{TASK[module]}。只允许输出 {sorted(FIELDS[module])}，其余数组为空。\n这是第 {index}/{len(chunks)} 段。前面已出现的引用：{json.dumps(prior, ensure_ascii=False)}\n<source>\n{chunk}\n</source>"
         error = None
@@ -80,5 +83,6 @@ def parse_agent_text(content: str, module: str, client, max_chars: int, retries:
             refs[kind].update({v: v for v in local[kind].values()})
         for field in FIELDS['session']:
             merged[field].extend(parsed.get(field, []))
+        progress.report(index, len(chunks), "正在整理与校验" if index == len(chunks) else f"已完成 {index}/{len(chunks)} 段")
     AgentEnvelope.model_validate(merged)
     return merged, len(chunks), masked_count

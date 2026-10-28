@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useSessionState } from "@/lib/session-state";
 
 type Mode = "manual" | "import";
 
@@ -19,10 +20,10 @@ export default function ResearchIdeaList({ initialMode }: { initialMode?: Mode }
   const router = useRouter();
   const searchParams = useSearchParams();
   const defaultMode = initialMode ?? (searchParams.get("mode") === "import" ? "import" : "manual");
-  const [mode, setMode] = useState<Mode>(defaultMode);
+  const [mode, setMode] = useSessionState<Mode>(`research-os:evolution:${projectId}:mode`, "manual");
   const [importOpened, setImportOpened] = useState(defaultMode === "import");
   const [items, setItems] = useState<ResearchIdea[] | null>(null);
-  const [name, setName] = useState("");
+  const [name, setName] = useSessionState(`research-os:idea:${projectId}:new-name`, "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -35,12 +36,14 @@ export default function ResearchIdeaList({ initialMode }: { initialMode?: Mode }
     }
   }, [projectId]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
+  useEffect(() => { if (defaultMode === "import") setMode("import"); }, [defaultMode, setMode]);
 
   async function create() {
     setBusy(true);
     setError("");
     try {
       const idea = await createResearchIdea(projectId, name.trim());
+      setName("");
       router.push(`/research-ideas/${idea.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -81,7 +84,7 @@ export default function ResearchIdeaList({ initialMode }: { initialMode?: Mode }
             </CardContent></Card>
           </TabsContent>
           <TabsContent value="import" forceMount className="data-[state=inactive]:hidden">
-            {importOpened && <ResearchEvolutionImport embedded onImported={() => void load()} />}
+            {(importOpened || mode === "import") && <ResearchEvolutionImport embedded onImported={() => void load()} />}
           </TabsContent>
         </Tabs>
       </section>

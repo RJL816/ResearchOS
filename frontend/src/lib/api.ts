@@ -720,7 +720,13 @@ export interface EvolutionRun {local_ref:string; idea_ref:string; name:string; s
 export interface EvolutionEdgeDraft {source_ref:string; target_ref:string; relation_type:string; reason:string | null; trigger_type:string | null; trigger_description:string | null; source_references:string | null; linked_run_refs:string[]; include:boolean}
 export interface EvolutionEvidence {idea_ref:string; hypothesis_title:string; run_ref:string; verdict:"supports"|"refutes"|"inconclusive"; note:string|null; include:boolean}
 export interface EvolutionDraft {ideas:EvolutionIdea[]; runs:EvolutionRun[]; edges:EvolutionEdgeDraft[]; evidence:EvolutionEvidence[]}
-export interface EvolutionParse {draft:EvolutionDraft; source_hash:string; segments:number; masked_count:number; existing_ideas:{id:number;title:string}[]; existing_runs:{id:number;name:string}[]}
+export interface EvolutionParse {draft:EvolutionDraft; source_hash:string; segments:number; masked_count:number; warnings?:string[]; existing_ideas:{id:number;title:string}[]; existing_runs:{id:number;name:string}[]}
 export const getEvolutionPrompt = () => request<{prompt:string}>("/api/research-evolution/prompt");
 export const parseEvolution = (id:number,filename:string,content:string) => request<EvolutionParse>(`/api/projects/${id}/research-evolution/parse`,{method:"POST",body:JSON.stringify({filename,content})});
 export const applyEvolution = (id:number,filename:string,content:string,parsed:EvolutionParse) => request<{counts:Record<string,number>;idea_ids:number[]}>(`/api/projects/${id}/research-evolution/apply`,{method:"POST",body:JSON.stringify({filename,content,source_hash:parsed.source_hash,draft:parsed.draft})});
+
+
+export type ParseJobKind = "evolution" | "proposal" | "agent" | "agent_auto";
+export interface ParseJob<T> { status: "queued" | "running" | "completed" | "failed"; kind: ParseJobKind; target_id: number; result?: T; error?: string; completed: number; total: number | null; stage: string }
+export const startParseJob = (body: {job_id: string; kind: ParseJobKind; target_id: number; content: string; filename?: string; module?: AgentPromptInfo["key"]}) => request<{job_id:string}>("/api/parse-jobs", {method:"POST", body:JSON.stringify(body)});
+export const getParseJob = <T>(id: string) => request<ParseJob<T>>(`/api/parse-jobs/${id}`);

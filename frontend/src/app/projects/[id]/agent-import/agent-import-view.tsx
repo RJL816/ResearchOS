@@ -29,13 +29,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/toast";
 import {
   agentImport,
-  parseAgentContent,
   type AgentParseResult,
   getAgentPrompts,
   type AgentImportItem,
   type AgentImportResult,
   type AgentPromptInfo,
 } from "@/lib/api";
+import { useSessionState, useSessionStorageWarning } from "@/lib/session-state";
+import { useParseJob } from "@/lib/use-parse-job";
+import { ParseProgress } from "@/components/parse-progress";
 
 const KIND_LABEL: Record<string, string> = {
   parse: "解析",
@@ -51,15 +53,25 @@ export default function AgentImportView() {
   const { toast } = useToast();
 
   const [prompts, setPrompts] = useState<AgentPromptInfo[] | null>(null);
-  const [activeKey, setActiveKey] = useState<AgentPromptInfo["key"]>("session");
+  const key = `research-os:agent-import:${projectId}`;
+  const [activeKey, setActiveKey] = useSessionState<AgentPromptInfo["key"]>(`${key}:module`, "session");
   const [error, setError] = useState<string | null>(null);
 
-  const [content, setContent] = useState("");
-  const [preview, setPreview] = useState<AgentImportResult | null>(null);
-  const [result, setResult] = useState<AgentImportResult | null>(null);
-  const [previewInput, setPreviewInput] = useState("");
-  const [parsed, setParsed] = useState<AgentParseResult | null>(null);
-  const [working, setWorking] = useState(false);
+  const [content, setContent] = useSessionState(`${key}:content`, "");
+  const [preview, setPreview] = useSessionState<AgentImportResult | null>(`${key}:preview`, null);
+  const [result, setResult] = useSessionState<AgentImportResult | null>(`${key}:result`, null);
+  const [previewInput, setPreviewInput] = useSessionState(`${key}:preview-input`, "");
+  const [parsed, setParsed] = useSessionState<AgentParseResult | null>(`${key}:parsed`, null);
+  const [applying, setWorking] = useState(false);
+  const storageWarning = useSessionStorageWarning();
+  const job = useParseJob<{parsed: AgentParseResult; imported: AgentImportResult | null}>(key, projectId, (output) => {
+    setParsed(output.parsed);
+    setPreviewInput(`${projectId}:${activeKey}:${content}`);
+    setPreview(output.imported ? null : output.parsed.preview);
+    setResult(output.imported);
+    if (output.imported?.ok) setContent("");
+  });
+  const working = applying || job.pending;
 
   useEffect(() => {
     getAgentPrompts()
@@ -82,43 +94,27 @@ export default function AgentImportView() {
   const runImport = useCallback(
     async (dryRun: boolean, autoImport = false) => {
       if (!content.trim() || (!dryRun && previewInput !== `${projectId}:${activeKey}:${content}`)) return;
-      setWorking(true);
       setError(null);
+      if (dryRun) {
+        setParsed(null); setPreview(null); setResult(null); setPreviewInput("");
+        job.start(autoImport ? "agent_auto" : "agent", { module: activeKey, content });
+        return;
+      }
+      setWorking(true);
       try {
-        if (dryRun) {
-          const parsedResult = await parseAgentContent(projectId, activeKey, content);
-          setParsed(parsedResult);
-          setPreview(parsedResult.preview);
-          setPreviewInput(`${projectId}:${activeKey}:${content}`);
-          setResult(null);
-          const hasRecords = Object.entries(parsedResult.records).some(([key, value]) => key !== "version" && Array.isArray(value) && value.length > 0);
-          if (autoImport && parsedResult.preview.ok && hasRecords) {
-            const imported = await agentImport(projectId, { module: activeKey, content: parsedResult.normalized, dry_run: false });
-            setResult(imported);
-            setPreview(null);
-            if (imported.ok) setContent("");
-            toast(imported.ok ? `解析并导入完成：${imported.created.length} 项创建` : `部分导入失败：${imported.errors.length} 项，请查看结果`, imported.ok ? "success" : "warning");
-          }
-        } else {
-          if (!parsed) return;
-          const result = await agentImport(projectId, { module: activeKey, content: parsed.normalized, dry_run: false });
-          setResult(result);
-          setPreview(null);
-          if (result.ok) setContent("");
-          toast(
-            result.ok
-              ? `导入完成：${result.created.length} 项创建`
-              : `导入完成，但有 ${result.errors.length} 项失败`,
-            result.ok ? "success" : "warning",
-          );
-        }
+        if (!parsed) return;
+        const imported = await agentImport(projectId, { module: activeKey, content: parsed.normalized, dry_run: false });
+        setResult(imported);
+        setPreview(null);
+        if (imported.ok) setContent("");
+        toast(imported.ok ? `导入完成：${imported.created.length} 项创建` : `导入完成，但有 ${imported.errors.length} 项失败`, imported.ok ? "success" : "warning");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         setWorking(false);
       }
     },
-    [projectId, activeKey, content, toast, previewInput, parsed],
+    [projectId, activeKey, content, toast, previewInput, parsed, job, setParsed, setPreview, setResult, setPreviewInput, setContent],
   );
 
   return (
@@ -141,13 +137,15 @@ export default function AgentImportView() {
         </p>
       </div>
 
-      {error && (
+      {(error || job.error) && (
         <Alert variant="destructive">
           <TriangleAlert className="size-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{error || job.error}</AlertDescription>
         </Alert>
       )}
 
+      {job.pending && <ParseProgress progress={job.progress} />}
+      {storageWarning && <p role="alert" className="text-sm text-destructive">本窗口无法保存草稿；请保持页面打开并检查存储空间。</p>}
       <div className="rounded-lg border bg-card p-4 text-sm">整理过去讨论中的多个 Idea 和演化原因？ <Link className="text-primary underline" href={`/projects/${projectId}/research-ideas?mode=import`}>导入科研演化报告</Link>；也可以 <Link className="text-primary underline" href={`/projects/${projectId}/research-ideas`}>整理单个 Idea</Link>。</div>
       {/* step 1: pick module + copy prompt */}
       <Card>

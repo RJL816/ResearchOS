@@ -1,7 +1,7 @@
 {
   "name": "research-os-desktop",
   "productName": "Research OS",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "description": "Research OS desktop shell — personal research workspace for AI/ML researchers",
   "private": true,
   "main": "main.cjs",
