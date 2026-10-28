@@ -1,23 +1,36 @@
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import type { IdeaStatus, ProjectStatus, RunStatus, Verdict } from "@/lib/api";
 
+/**
+ * Status as a calibration mark (Inkline): a 2px left tick in the semantic
+ * color + text. No colored pills, no fill backgrounds — color never carries
+ * the meaning alone (the label text is always present).
+ */
 const PALETTE = {
-  green: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  red: "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300",
-  blue: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300",
-  amber: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  gray: "border-border bg-muted text-muted-foreground",
+  green: "text-success",
+  red: "text-destructive",
+  blue: "text-info",
+  amber: "text-warning",
+  gray: "text-muted-foreground",
+} as const;
+
+const TICK = {
+  green: "before:bg-success",
+  red: "before:bg-destructive",
+  blue: "before:bg-info",
+  amber: "before:bg-warning",
+  gray: "before:bg-muted-foreground/50",
 } as const;
 
 const VERDICT_LABEL: Record<Verdict, string> = {
   supports: "支持",
   refutes: "反驳",
-  inconclusive: "不确定",
+  inconclusive: "存疑",
 };
 const VERDICT_COLOR: Record<Verdict, keyof typeof PALETTE> = {
   supports: "green",
   refutes: "red",
-  inconclusive: "amber",
+  inconclusive: "gray", // 存疑用中性墨色，不用黄色（黄色只留给待审）
 };
 
 const RUN_STATUS_LABEL: Record<RunStatus, string> = {
@@ -39,11 +52,11 @@ const IDEA_STATUS_LABEL: Record<IdeaStatus, string> = {
   exploring: "探索中",
   testing: "验证中",
   validated: "已验证",
-  refuted: "已否证",
-  parked: "搁置",
+  refuted: "已反驳",
+  parked: "已搁置",
 };
 const IDEA_STATUS_COLOR: Record<IdeaStatus, keyof typeof PALETTE> = {
-  exploring: "blue",
+  exploring: "gray",
   testing: "amber",
   validated: "green",
   refuted: "red",
@@ -79,15 +92,26 @@ const COLORS: Record<Variant, Record<string, keyof typeof PALETTE>> = {
 export function StatusBadge({
   kind,
   value,
+  className,
 }: {
   kind: Variant;
   value: string;
+  className?: string;
 }) {
   const label = LABELS[kind][value] ?? value;
   const color = COLORS[kind][value] ?? "gray";
   return (
-    <Badge variant="outline" className={`whitespace-nowrap ${PALETTE[color]}`}>
+    <span
+      className={cn(
+        // 2px status tick + plain text — reads as a calibration mark, not a badge
+        "before:inline-block before:h-3 before:w-0.5 before:align-[-1.5px] before:mr-1.5 before:content-['']",
+        PALETTE[color],
+        TICK[color],
+        "whitespace-nowrap text-xs",
+        className,
+      )}
+    >
       {label}
-    </Badge>
+    </span>
   );
 }

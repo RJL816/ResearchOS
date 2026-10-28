@@ -47,7 +47,7 @@ export function ProjectCreateDialog({ onCreated }: { onCreated: () => void }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
+        <Button variant="outline">
           <Plus className="size-4" />
           新建项目
         </Button>

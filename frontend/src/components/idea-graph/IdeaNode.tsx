@@ -68,7 +68,7 @@ function IdeaNodeInner({ data, selected }: NodeProps<IdeaFlowNode>) {
               <Icon className="text-muted-foreground size-3.5" aria-hidden />
               <StatusBadge kind="idea" value={node.status} />
             </div>
-            <div className="text-[13px] leading-snug font-semibold">{node.title}</div>
+            <div className="font-serif-ink text-[15px] leading-snug font-medium">{node.title}</div>
             <p className="text-muted-foreground mt-0.5 line-clamp-2 text-[11px] leading-snug">
               {node.summary}
             </p>

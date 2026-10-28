@@ -3,12 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowUpRight,
+  ArrowRight,
   FlaskConical,
   GitBranch,
   MessageSquareText,
   NotebookPen,
-  Plus,
   Workflow,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,237 +18,335 @@ import { useProjectContext } from "@/components/project-context";
 import {
   getProposalSummary,
   listIdeas,
-  listProjects,
+  listNotes,
   listRuns,
   type Idea,
   type ProposalSummary,
+  type ResearchNote,
   type Run,
 } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 
 interface ProjectData {
-  projectId: number;
-  projectName: string;
   runs: Run[];
   ideas: Idea[];
+  notes: ResearchNote[];
   summary: ProposalSummary | null;
 }
 
+/**
+ * Research Overview — answers "what am I working on today" for the ACTIVE
+ * project (sidebar project switcher drives the context). First visual landing
+ * point is the research focus statement (serif), second is evidence state.
+ */
 export default function OverviewPage() {
   const { projects, activeProject, setActiveProject } = useProjectContext();
-  const [data, setData] = useState<ProjectData[] | null>(null);
+  const [data, setData] = useState<ProjectData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const projectId = activeProject?.id ?? null;
 
   const load = useCallback(async () => {
+    if (projectId === null) {
+      setData(null);
+      return;
+    }
     try {
       setError(null);
-      const projectList = await listProjects();
-      const results = await Promise.all(
-        projectList.map(async (project) => {
-          const [runs, ideas, summary] = await Promise.all([
-            listRuns(project.id).catch(() => []),
-            listIdeas(project.id).catch(() => []),
-            getProposalSummary(project.id).catch(() => null),
-          ]);
-          return {
-            projectId: project.id,
-            projectName: project.name,
-            runs,
-            ideas,
-            summary: summary && summary.total_count > 0 ? summary : null,
-          };
-        }),
-      );
-      setData(results);
+      const [runs, ideas, notes, summary] = await Promise.all([
+        listRuns(projectId),
+        listIdeas(projectId),
+        listNotes(projectId).catch(() => [] as ResearchNote[]),
+        getProposalSummary(projectId).catch(() => null),
+      ]);
+      setData({ runs, ideas, notes, summary: summary && summary.total_count > 0 ? summary : null });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const stats = useMemo(() => {
-    if (!data) return null;
-    const allRuns = data.flatMap((d) => d.runs.map((r) => ({ ...r, projectName: d.projectName })));
-    const allIdeas = data.flatMap((d) => d.ideas.map((i) => ({ ...i, projectName: d.projectName })));
-    const activeIdeas = allIdeas.filter((i) => i.status === "exploring" || i.status === "testing");
-    const pending = data.reduce((sum, d) => sum + (d.summary?.pending_count ?? 0), 0);
-    const running = allRuns.filter((r) => r.status === "running" || r.status === "planned");
-    return { allRuns, activeIdeas, pending, running };
+  const focus = useMemo(() => {
+    if (!activeProject) return null;
+    const statement =
+      activeProject.description?.trim() ||
+      data?.ideas.find((i) => i.status === "testing" || i.status === "exploring")?.title;
+    return statement ? { text: statement, derived: !activeProject.description?.trim() } : null;
+  }, [activeProject, data]);
+
+  const activeIdeas = useMemo(
+    () =>
+      (data?.ideas ?? [])
+        .filter((i) => i.status === "exploring" || i.status === "testing")
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+        .slice(0, 4),
+    [data],
+  );
+  const recentRuns = useMemo(
+    () => [...(data?.runs ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5),
+    [data],
+  );
+  const recentEvolution = useMemo(() => {
+    const events: { text: string; at: string; href: string }[] = [];
+    for (const idea of data?.ideas ?? []) {
+      const versions = [...idea.versions].sort((a, b) => b.version_number - a.version_number);
+      for (let i = 0; i < versions.length - 1; i++) {
+        events.push({
+          text: versions[i].change_reason || `修订为 v${versions[i].version_number}`,
+          at: versions[i].created_at,
+          href: `/ideas/${idea.id}`,
+        });
+      }
+    }
+    return events.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 3);
   }, [data]);
 
-  return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-page-title">研究总览</h1>
-          <p className="text-muted-foreground mt-0.5 text-[13px]">
-            {activeProject ? `当前项目：${activeProject.name}` : "全部项目的最近动态"}
+  if (projects.length === 0 && !error) {
+    return (
+      <div className="p-8">
+        <div className="mx-auto max-w-xl text-center">
+          <h1 className="text-page-title">Research OS</h1>
+          <p className="text-muted-foreground mt-2 text-sm">
+            还没有研究项目。创建第一个项目，开始记录假设、实验与证据。
           </p>
+          <div className="mt-4 flex justify-center">
+            <ProjectCreateDialog onCreated={() => window.location.reload()} />
+          </div>
         </div>
-        <div className="flex gap-2">
-          {activeProject && (
-            <>
-              <Button asChild variant="outline" size="sm" className="h-8">
-                <Link href={`/projects/${activeProject.id}/conversations`}>
-                  <MessageSquareText className="size-3.5" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* status strip — quiet, mono numbers, tabular */}
+      <div className="text-muted-foreground flex h-7 shrink-0 items-center gap-4 border-b px-6 text-xs">
+        <span>
+          活跃假设 <span className="text-foreground font-mono">{activeIdeas.length}</span>
+        </span>
+        <span>
+          实验 <span className="text-foreground font-mono">{data?.runs.length ?? "—"}</span>
+        </span>
+        <span>
+          笔记 <span className="text-foreground font-mono">{data?.notes.length ?? "—"}</span>
+        </span>
+        <span>
+          待审{" "}
+          <span className={`font-mono ${(data?.summary?.pending_count ?? 0) > 0 ? "text-warning" : "text-foreground"}`}>
+            {data?.summary?.pending_count ?? 0}
+          </span>
+        </span>
+        {data && <span className="ml-auto">更新于 {fmtRelative(activeProject?.updated_at)}</span>}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        {error && (
+          <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
+        {/* research focus — the only hero, serif statement first */}
+        {!activeProject ? (
+          <Skeleton className="h-36 rounded-md" />
+        ) : (
+          <section className="border-b pb-5">
+            <p className="text-muted-foreground text-xs">当前研究焦点</p>
+            {focus ? (
+              <>
+                <p className="font-serif-ink mt-1.5 max-w-3xl text-[22px] leading-[34px] font-medium">
+                  {focus.text}
+                </p>
+                {focus.derived && <p className="text-muted-foreground mt-1 text-[11px]">来自项目描述</p>}
+              </>
+            ) : (
+              <p className="text-muted-foreground mt-2 text-sm">
+                尚未设定研究焦点——可在项目描述中写一句话研究问题。
+              </p>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+              <span className="font-medium">{activeProject.name}</span>
+              <StatusBadge kind="project" value={activeProject.status} />
+              <Button asChild size="sm" className="h-7 text-xs">
+                <Link href={`/projects/${projectId}/ideas/graph`}>
+                  继续研究
+                  <ArrowRight className="size-3" />
+                </Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
+                <Link href={`/projects/${projectId}/experiments`}>
+                  <FlaskConical className="size-3" />
+                  记录实验
+                </Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
+                <Link href={`/projects/${projectId}/conversations`}>
+                  <MessageSquareText className="size-3" />
                   导入对话
                 </Link>
               </Button>
-              <Button asChild size="sm" className="h-8">
-                <Link href={`/projects/${activeProject.id}/experiments`}>
-                  <FlaskConical className="size-3.5" />
-                  打开实验台
+              <ProjectCreateDialog onCreated={() => void load()} />
+            </div>
+          </section>
+        )}
+
+        {!data ? (
+          <div className="space-y-3 pt-5">
+            <Skeleton className="h-32 rounded-md" />
+            <Skeleton className="h-24 rounded-md" />
+          </div>
+        ) : (
+          <div className="grid gap-6 pt-5 lg:grid-cols-[1fr_320px]">
+            {/* main column: active ideas / recent runs / recent evolution */}
+            <div className="min-w-0 space-y-6">
+              <section>
+                <SectionHeader title="活跃假设" />
+                {activeIdeas.length === 0 ? (
+                  <EmptyLine text="没有探索中或验证中的假设。" />
+                ) : (
+                  <ul className="divide-border-subtle border-border-subtle divide-y border-y">
+                    {activeIdeas.map((idea) => (
+                      <li key={idea.id}>
+                        <Link
+                          href={`/ideas/${idea.id}`}
+                          className="hover:bg-accent/40 flex items-center gap-3 px-1 py-2.5 transition-standard"
+                        >
+                          <span className="text-muted-foreground w-14 shrink-0 font-mono text-[11px]">
+                            #{idea.id} v{idea.versions.find((v) => v.id === idea.current_version_id)?.version_number ?? 1}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate font-serif-ink text-[15px]">{idea.title}</span>
+                          <StatusBadge kind="idea" value={idea.status} />
+                          <ArrowRight className="text-muted-foreground size-3 shrink-0" />
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <Link
+                  href={`/projects/${projectId}/ideas/graph`}
+                  className="text-primary mt-2 inline-flex items-center gap-1 text-xs hover:underline"
+                >
+                  在演化图谱中查看全部
                 </Link>
-              </Button>
-            </>
-          )}
-          <ProjectCreateDialog onCreated={() => void load()} />
-        </div>
-      </div>
+              </section>
 
-      {error && (
-        <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
-      {/* compact stat strip — real counts only */}
-      <div className="border-border-subtle mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border md:grid-cols-4">
-        <Stat label="活跃假设" value={stats?.activeIdeas.length} icon={GitBranch} />
-        <Stat label="进行中实验" value={stats?.running.length} icon={FlaskConical} />
-        <Stat label="待审 AI 提案" value={stats?.pending} icon={Workflow} highlight={(stats?.pending ?? 0) > 0} />
-        <Stat label="项目" value={projects.length} icon={NotebookPen} />
-      </div>
-
-      {!data ? (
-        <div className="space-y-3">
-          <Skeleton className="h-40 rounded-lg" />
-          <Skeleton className="h-56 rounded-lg" />
-        </div>
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-          <div className="min-w-0 space-y-6">
-            {/* recent experiments across projects */}
-            <section>
-              <SectionHeader title="最近实验" />
-              <RecentRuns runs={stats?.allRuns ?? []} />
-            </section>
-
-            {/* active ideas */}
-            <section>
-              <SectionHeader title="活跃假设" hint="探索中 / 验证中" />
-              <ActiveIdeas ideas={stats?.activeIdeas ?? []} />
-            </section>
-          </div>
-
-          <div className="space-y-6">
-            {/* pending reviews */}
-            <section>
-              <SectionHeader title="待处理" />
-              <div className="bg-card divide-border-subtle rounded-lg border">
-                {data.every((d) => !d.summary) ? (
-                  <p className="text-muted-foreground p-4 text-xs">没有待处理的 AI 提案。</p>
+              <section>
+                <SectionHeader title="最近实验" />
+                {recentRuns.length === 0 ? (
+                  <EmptyLine text="还没有实验记录——点上方「记录实验」。" />
                 ) : (
-                  data
-                    .filter((d) => d.summary)
-                    .map((d) => (
-                      <Link
-                        key={d.projectId}
-                        href={d.summary?.latest_job_id ? `/analysis/${d.summary.latest_job_id}` : "#"}
-                        className="hover:bg-accent/50 flex items-center gap-3 border-b border-border-subtle px-4 py-3 last:border-0 transition-standard"
-                      >
-                        <Workflow className="text-primary size-4 shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] font-medium">{d.projectName}</p>
-                          <p className="text-muted-foreground text-xs">
-                            {d.summary?.pending_count} 条待审 / {d.summary?.total_count} 总计
-                          </p>
-                        </div>
-                        <ArrowUpRight className="text-muted-foreground size-3.5" />
-                      </Link>
-                    ))
+                  <ul className="divide-border-subtle border-border-subtle divide-y border-y">
+                    {recentRuns.map((run) => {
+                      return (
+                        <li key={run.id}>
+                          <Link
+                            href={`/runs/${run.id}`}
+                            className="hover:bg-accent/40 flex items-center gap-3 px-1 py-2 transition-standard"
+                          >
+                            <StatusBadge kind="run" value={run.status} />
+                            <span className="min-w-0 flex-1 truncate font-mono text-xs">{run.name}</span>
+                            {run.dataset && (
+                              <span className="text-muted-foreground hidden shrink-0 text-[11px] sm:block">
+                                {run.dataset}
+                              </span>
+                            )}
+                            <span className="text-muted-foreground w-14 shrink-0 text-right text-[11px]">
+                              {fmtRelative(run.created_at)}
+                            </span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
-              </div>
-            </section>
+              </section>
 
-            {/* projects */}
-            <section>
-              <SectionHeader title="项目" />
-              <div className="bg-card divide-border-subtle rounded-lg border">
-                {projects.map((project) => (
-                  <button
-                    key={project.id}
-                    type="button"
-                    onClick={() => setActiveProject(project.id)}
-                    className="hover:bg-accent/50 flex w-full items-center gap-3 border-b border-border-subtle px-4 py-2.5 text-left last:border-0 transition-standard"
-                  >
-                    <span
-                      className={`size-1.5 shrink-0 rounded-full ${project.id === activeProject?.id ? "bg-primary" : "bg-muted-foreground/30"}`}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-[13px]">{project.name}</span>
-                    <span className="text-muted-foreground shrink-0 font-mono text-[11px]">
-                      {project.idea_count}/{project.run_count}
-                    </span>
-                  </button>
-                ))}
-                {projects.length === 0 && (
-                  <p className="text-muted-foreground p-4 text-xs">还没有项目，点右上角新建。</p>
-                )}
-              </div>
-            </section>
+              {recentEvolution.length > 0 && (
+                <section>
+                  <SectionHeader title="最近演化" hint="为什么改了假设" />
+                  <ul className="space-y-1.5">
+                    {recentEvolution.map((event, index) => (
+                      <li key={index} className="flex items-baseline gap-2 text-[13px]">
+                        <GitBranch className="text-muted-foreground size-3 shrink-0" />
+                        <Link href={event.href} className="min-w-0 flex-1 truncate hover:underline">
+                          {event.text}
+                        </Link>
+                        <span className="text-muted-foreground shrink-0 text-[11px]">{fmtRelative(event.at)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </div>
 
-            <section>
-              <SectionHeader title="快速入口" />
-              <div className="grid grid-cols-2 gap-2">
-                {activeProject ? (
-                  <>
-                    <QuickLink href={`/projects/${activeProject.id}/ideas/graph`} icon={GitBranch} label="演化图谱" />
-                    <QuickLink href={`/projects/${activeProject.id}/timeline`} icon={NotebookPen} label="研究时间线" />
-                    <QuickLink href={`/projects/${activeProject.id}/conversations`} icon={MessageSquareText} label="导入对话" />
-                    <QuickLink href={`/projects/${activeProject.id}`} icon={Plus} label="新建内容" />
-                  </>
-                ) : (
-                  <p className="text-muted-foreground col-span-2 rounded-lg border border-dashed p-4 text-xs">
-                    创建或选择一个项目后可用。
-                  </p>
-                )}
-              </div>
-            </section>
+            {/* right rail: inbox / notes */}
+            <div className="space-y-6">
+              <section>
+                <SectionHeader title="待处理" />
+                <div className="divide-border-subtle border-border-subtle divide-y border-y">
+                  {data.summary ? (
+                    <Link
+                      href={data.summary.latest_job_id ? `/analysis/${data.summary.latest_job_id}` : "#"}
+                      className="hover:bg-accent/40 flex items-center gap-2.5 py-2.5 transition-standard"
+                    >
+                      <Workflow className="text-warning size-4 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-medium">AI 提案 {data.summary.pending_count} 条待审</p>
+                        <p className="text-muted-foreground text-[11px]">
+                          共 {data.summary.total_count} 条，来自最近的对话分析
+                        </p>
+                      </div>
+                    </Link>
+                  ) : (
+                    <p className="text-muted-foreground py-2 text-xs">暂时没有待处理事项。</p>
+                  )}
+                </div>
+              </section>
+
+              {data.notes.length > 0 && (
+                <section>
+                  <SectionHeader title="最近笔记" />
+                  <ul className="divide-border-subtle border-border-subtle divide-y border-y">
+                    {data.notes.slice(0, 4).map((note) => (
+                      <li key={note.id} className="flex items-center gap-2 py-2 text-[13px]">
+                        <NotebookPen className="text-muted-foreground size-3.5 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">{note.title}</span>
+                        <span className="text-muted-foreground shrink-0 text-[11px]">{fmtRelative(note.created_at)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {projects.length > 1 && (
+                <section>
+                  <SectionHeader title="全部项目" />
+                  <ul className="divide-border-subtle border-border-subtle divide-y border-y">
+                    {projects.map((project) => (
+                      <li key={project.id}>
+                        <button
+                          type="button"
+                          onClick={() => setActiveProject(project.id)}
+                          className="hover:bg-accent/40 flex w-full items-center gap-2 py-2 text-left text-[13px] transition-standard"
+                        >
+                          <span
+                            className={`size-1.5 shrink-0 rounded-full ${
+                              project.id === projectId ? "bg-primary" : "bg-muted-foreground/30"
+                            }`}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                          {project.id !== projectId && <span className="text-muted-foreground text-[10px]">切换</span>}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  icon: Icon,
-  highlight,
-}: {
-  label: string;
-  value?: number;
-  icon: typeof FlaskConical;
-  highlight?: boolean;
-}) {
-  return (
-    <div className="bg-card flex items-center gap-3 px-4 py-3">
-      <div
-        className={`flex size-8 shrink-0 items-center justify-center rounded-md ${
-          highlight ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-        }`}
-      >
-        <Icon className="size-4" />
-      </div>
-      <div className="min-w-0">
-        <p className={`font-mono text-lg leading-none font-semibold ${highlight ? "text-primary" : ""}`}>
-          {value ?? "—"}
-        </p>
-        <p className="text-muted-foreground mt-1 truncate text-xs">{label}</p>
+        )}
       </div>
     </div>
   );
@@ -257,93 +354,15 @@ function Stat({
 
 function SectionHeader({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="mb-2 flex items-baseline justify-between">
-      <h2 className="text-section-title">{title}</h2>
+    <div className="mb-1.5 flex items-baseline justify-between">
+      <h2 className="text-[15px] font-semibold">{title}</h2>
       {hint && <span className="text-muted-foreground text-[11px]">{hint}</span>}
     </div>
   );
 }
 
-function RecentRuns({ runs }: { runs: (Run & { projectName: string })[] }) {
-  const recent = [...runs]
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    .slice(0, 6);
-  if (recent.length === 0) {
-    return <EmptyLine text="还没有实验记录。" />;
-  }
-  return (
-    <div className="bg-card divide-border-subtle overflow-hidden rounded-lg border">
-      {recent.map((run) => (
-        <Link
-          key={run.id}
-          href={`/runs/${run.id}`}
-          className="hover:bg-accent/50 flex items-center gap-3 border-b border-border-subtle px-4 py-2.5 last:border-0 transition-standard"
-        >
-          <span className="text-muted-foreground shrink-0 font-mono text-[11px]">#{run.id}</span>
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{run.name}</span>
-          <span className="text-muted-foreground hidden truncate text-xs sm:block">{run.projectName}</span>
-          <StatusBadge kind="run" value={run.status} />
-          <span className="text-muted-foreground w-16 shrink-0 text-right text-[11px]">
-            {fmtRelative(run.created_at)}
-          </span>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function ActiveIdeas({ ideas }: { ideas: (Idea & { projectName: string })[] }) {
-  const recent = [...ideas]
-    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-    .slice(0, 6);
-  if (recent.length === 0) {
-    return <EmptyLine text="没有探索中或验证中的假设。" />;
-  }
-  return (
-    <div className="bg-card divide-border-subtle overflow-hidden rounded-lg border">
-      {recent.map((idea) => (
-        <Link
-          key={idea.id}
-          href={`/ideas/${idea.id}`}
-          className="hover:bg-accent/50 flex items-center gap-3 border-b border-border-subtle px-4 py-2.5 last:border-0 transition-standard"
-        >
-          <span className="text-muted-foreground shrink-0 font-mono text-[11px]">#{idea.id}</span>
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{idea.title}</span>
-          <span className="text-muted-foreground hidden truncate text-xs sm:block">{idea.projectName}</span>
-          <StatusBadge kind="idea" value={idea.status} />
-          <span className="text-muted-foreground w-16 shrink-0 text-right text-[11px]">
-            {fmtRelative(idea.updated_at)}
-          </span>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function QuickLink({
-  href,
-  icon: Icon,
-  label,
-}: {
-  href: string;
-  icon: typeof GitBranch;
-  label: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="hover:border-primary/40 hover:text-foreground text-muted-foreground flex items-center gap-2 rounded-lg border px-3 py-2.5 text-[13px] transition-standard"
-    >
-      <Icon className="size-3.5" />
-      {label}
-    </Link>
-  );
-}
-
 function EmptyLine({ text }: { text: string }) {
   return (
-    <div className="text-muted-foreground rounded-lg border border-dashed px-4 py-6 text-center text-xs">
-      {text}
-    </div>
+    <div className="text-muted-foreground border-border-subtle border-y py-4 text-xs">{text}</div>
   );
 }
