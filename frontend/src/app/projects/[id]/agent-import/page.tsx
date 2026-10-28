@@ -2,9 +2,12 @@ import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import AgentImportView from "./agent-import-view";
 
-export function generateStaticParams() {
-  return [{ id: "app" }];
-}
+
+// generateStaticParams is only needed for the desktop static export
+// (DESKTOP_BUILD=1); in web/PPR mode exporting it pins placeholder routes.
+export const generateStaticParams = process.env.DESKTOP_BUILD
+  ? () => [{ id: "app" }]
+  : undefined;
 
 export default function AgentImportPage() {
   return (

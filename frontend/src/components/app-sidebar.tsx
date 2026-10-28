@@ -70,6 +70,19 @@ export function AppSidebar() {
     setCollapsed(localStorage.getItem(STORAGE_KEY) === "collapsed");
   }, []);
 
+  // Desktop windows resize freely: auto-collapse to the icon rail below 1200px
+  // (manual toggle still works; state is restored when the window widens).
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1199px)");
+    const apply = () => {
+      if (media.matches) setCollapsed(true);
+      else setCollapsed(localStorage.getItem(STORAGE_KEY) === "collapsed");
+    };
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
+
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       localStorage.setItem(STORAGE_KEY, prev ? "open" : "collapsed");

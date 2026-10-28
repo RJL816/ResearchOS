@@ -82,6 +82,7 @@ function PreviewInner({ jobId, onClose }: { jobId: number; onClose: () => void }
               summary: String(payload.body ?? "").slice(0, 140),
               status: "exploring" as const,
               version: 1,
+              change_reason: null,
               evidence_count: 0,
               run_count: 0,
               supports_count: 0,

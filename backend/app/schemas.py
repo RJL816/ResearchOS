@@ -283,6 +283,7 @@ class GraphNode(BaseModel):
     summary: str
     status: str  # the idea's DB status; never auto-derived from metrics
     version: int
+    change_reason: Optional[str] = None  # why this version exists (core info)
     evidence_count: int
     run_count: int
     supports_count: int

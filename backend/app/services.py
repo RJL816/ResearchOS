@@ -292,6 +292,7 @@ def get_project_idea_graph(
                     summary=summarize_body(version.body),
                     status=idea.status,
                     version=version.version_number,
+                    change_reason=version.change_reason,
                     evidence_count=len(links),
                     run_count=len({link.run_id for link in links}),
                     supports_count=verdicts.get("supports", 0),

@@ -103,6 +103,36 @@ export default function OverviewPage() {
     return events.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 3);
   }, [data]);
 
+  const nextStep = useMemo(() => {
+    if (data?.summary?.pending_count) {
+      return {
+        text: `处理 ${data.summary.pending_count} 条 AI 提案`,
+        reason: "最近的对话分析产生了待审核变更",
+        href: data.summary.latest_job_id ? `/analysis/${data.summary.latest_job_id}` : `/projects/${projectId}/conversations`,
+      };
+    }
+    const unreviewedRun = recentRuns.find((r) => r.status === "succeeded" || r.status === "failed");
+    if (unreviewedRun) {
+      return {
+        text: `复盘实验 ${unreviewedRun.name}`,
+        reason: "已有结果尚未关联到假设证据",
+        href: `/runs/${unreviewedRun.id}`,
+      };
+    }
+    if (activeIdeas[0]) {
+      return {
+        text: `验证假设「${activeIdeas[0].title}」`,
+        reason: "当前最活跃的假设，先设计对照实验",
+        href: `/ideas/${activeIdeas[0].id}`,
+      };
+    }
+    return {
+      text: "记录第一个实验",
+      reason: "证据是研究记忆的起点",
+      href: `/projects/${projectId}/experiments`,
+    };
+  }, [data, recentRuns, activeIdeas, projectId]);
+
   if (projects.length === 0 && !error) {
     return (
       <div className="p-8">
@@ -189,6 +219,13 @@ export default function OverviewPage() {
               </Button>
               <ProjectCreateDialog onCreated={() => void load()} />
             </div>
+            <p className="text-muted-foreground mt-2.5 flex flex-wrap items-baseline gap-1 text-xs">
+              下一步：
+              <Link href={nextStep.href} className="text-primary inline-flex items-center gap-1 font-medium hover:underline">
+                {nextStep.text}
+              </Link>
+              <span>— {nextStep.reason}</span>
+            </p>
           </section>
         )}
 

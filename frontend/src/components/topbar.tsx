@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Moon, Sun } from "lucide-react";
+import { ChevronRight, Moon, Search, Sun } from "lucide-react";
 import { SidebarMobileTrigger } from "@/components/app-sidebar";
 import { useProjectContext } from "@/components/project-context";
 import { useTheme } from "@/components/theme";
@@ -49,6 +49,19 @@ export function Topbar() {
         ))}
       </nav>
       <div className="ml-auto flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground h-8 gap-1.5 text-xs"
+          onClick={() => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));
+          }}
+          title="搜索与跳转 (Ctrl+K)"
+        >
+          <Search className="size-3.5" />
+          <span className="hidden sm:inline">搜索</span>
+          <kbd className="bg-muted rounded border px-1 font-mono text-[10px]">Ctrl K</kbd>
+        </Button>
         <Button
           variant="ghost"
           size="icon"

@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
 import { RunCreateDialog } from "@/components/run-create-dialog";
-import { getProject, getRun, listRuns, type Project, type RunDetail } from "@/lib/api";
+import { getProject, getRun, getRunMetrics, listRuns, type Project, type RunDetail } from "@/lib/api";
 import { fmtDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,8 @@ type SortKey = "name" | "status" | "created_at" | "duration" | "metric";
 interface Row {
   run: RunDetail;
   durationMs: number | null;
+  spark: { step: number; value: number }[];
+  linkedIdea: { id: number; title: string } | null;
 }
 
 function durationText(ms: number | null) {
@@ -52,16 +54,26 @@ export default function ExperimentsView() {
       setError(null);
       const [projectData, runs] = await Promise.all([getProject(projectId), listRuns(projectId)]);
       setProject(projectData);
-      const details = await Promise.all(runs.map((run) => getRun(run.id)));
-      setRows(
-        details.map((run) => ({
-          run,
-          durationMs:
-            run.started_at && run.finished_at
-              ? new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()
-              : null,
-        })),
+      const details = await Promise.all(
+        runs.map(async (run) => {
+          const [detail, metrics] = await Promise.all([getRun(run.id), getRunMetrics(run.id)]);
+          const main = metrics.series[0];
+          const spark = main
+            ? main.points.slice(-24).map((p: { step: number; value: number }) => ({ step: p.step, value: p.value }))
+            : [];
+          const evidence = detail.evidence[0];
+          return {
+            run: detail,
+            durationMs:
+              detail.started_at && detail.finished_at
+                ? new Date(detail.finished_at).getTime() - new Date(detail.started_at).getTime()
+                : null,
+            spark,
+            linkedIdea: evidence ? { id: evidence.idea_id, title: evidence.idea_title } : null,
+          };
+        }),
       );
+      setRows(details);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -167,19 +179,21 @@ export default function ExperimentsView() {
                 <SortableHead label="Run" sortKey="name" active={sortKey} asc={asc} onSort={toggleSort} mono />
                 <SortableHead label="状态" sortKey="status" active={sortKey} asc={asc} onSort={toggleSort} />
                 <TableHead>主指标（最新）</TableHead>
-                <SortableHead label="耗时" sortKey="duration" active={sortKey} asc={asc} onSort={toggleSort} />
+                <TableHead className="hidden lg:table-cell">趋势</TableHead>
+                <TableHead className="hidden xl:table-cell">关联假设</TableHead>
+                <SortableHead label="耗时" sortKey="duration" active={sortKey} asc={asc} onSort={toggleSort} className="hidden md:table-cell" />
                 <SortableHead
                   label="创建时间"
                   sortKey="created_at"
                   active={sortKey}
                   asc={asc}
                   onSort={toggleSort}
-                  className="pr-4 text-right"
+                  className="hidden pr-4 text-right md:table-cell"
                 />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sorted.map(({ run, durationMs }) => {
+              {sorted.map(({ run, durationMs, spark, linkedIdea }) => {
                 const metric = run.metric_stats[0];
                 const checked = selected.includes(run.id);
                 return (
@@ -217,8 +231,20 @@ export default function ExperimentsView() {
                         <span className="text-muted-foreground text-xs">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{durationText(durationMs)}</TableCell>
-                    <TableCell className="text-muted-foreground pr-4 text-right text-xs">
+                    <TableCell className="hidden lg:table-cell">
+                      {spark.length >= 2 ? <Spark points={spark} /> : <span className="text-muted-foreground text-xs">—</span>}
+                    </TableCell>
+                    <TableCell className="hidden xl:table-cell">
+                      {linkedIdea ? (
+                        <Link href={`/ideas/${linkedIdea.id}`} className="font-serif-ink hover:underline text-[13px]">
+                          {linkedIdea.title}
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden font-mono text-xs md:table-cell">{durationText(durationMs)}</TableCell>
+                    <TableCell className="text-muted-foreground hidden pr-4 text-right text-xs md:table-cell">
                       {fmtDateTime(run.created_at)}
                     </TableCell>
                   </TableRow>
@@ -229,6 +255,30 @@ export default function ExperimentsView() {
         </Card>
       )}
     </div>
+  );
+}
+
+/** Inkline sparkline: hairline polyline, solid last dot, no axes. */
+function Spark({ points }: { points: { step: number; value: number }[] }) {
+  const w = 64;
+  const h = 18;
+  const values = points.map((p) => p.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const path = points
+    .map((p, i) => {
+      const x = (i / (points.length - 1)) * (w - 4) + 2;
+      const y = h - 2 - ((p.value - min) / range) * (h - 4);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  const [lx, ly] = path.split(" ").pop()!.split(",");
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden className="overflow-visible">
+      <polyline points={path} fill="none" stroke="currentColor" strokeWidth="1.25" className="text-muted-foreground" />
+      <circle cx={lx} cy={ly} r="1.8" className="fill-foreground" />
+    </svg>
   );
 }
 

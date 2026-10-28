@@ -286,6 +286,7 @@ export interface GraphNode {
   summary: string;
   status: IdeaStatus;
   version: number;
+  change_reason: string | null;
   evidence_count: number;
   run_count: number;
   supports_count: number;

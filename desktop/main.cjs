@@ -36,6 +36,7 @@ const APP_VERSION = app.getVersion();
 let autoUpdater = null;
 let backendProcess = null;
 let backendPort = 8000;
+let apiBase = null;
 let mainWindow = null;
 
 // ---------------------------------------------------------------- backend
@@ -44,7 +45,10 @@ function findFreePort(startFrom) {
   return new Promise((resolve) => {
     const tryPort = (port) => {
       const socket = createServer();
-      socket.once("error", () => resolve(tryPort(port + 1)));
+      socket.once("error", () => {
+        socket.removeAllListeners("listening");
+        tryPort(port + 1); // retry — never resolve with tryPort's return value
+      });
       socket.once("listening", () => socket.close(() => resolve(port)));
       socket.listen(port, "127.0.0.1");
     };
@@ -144,15 +148,7 @@ async function createWindow() {
   const backendReady = await waitForBackend(backendPort);
   console.log(`[research-os] backend ${backendReady ? "ready" : "NOT ready"} on :${backendPort}`);
 
-  // Runtime API base injection (see frontend resolveApiBase()).
-  const configJs = `window.__RESEARCH_OS_API_BASE__ = "http://127.0.0.1:${backendPort}";`;
-  const configPath = path.join(FRONTEND_DIST, "config.js");
-  try {
-    await fsp.mkdir(path.dirname(configPath), { recursive: true });
-    await fsp.writeFile(configPath, configJs);
-  } catch (err) {
-    console.error("[research-os] cannot write config.js", err);
-  }
+  apiBase = `http://127.0.0.1:${backendPort}`;
 
   const win = new BrowserWindow({
     width: 1440,
@@ -181,10 +177,22 @@ async function createWindow() {
 
 registerAppProtocol();
 
-app.whenReady.then(() => {
-  protocol.handle(SCHEME, (request) => {
+app.whenReady().then(() => {
+  protocol.handle(SCHEME, async (request) => {
     const file = resolveExportFile(new URL(request.url).pathname);
-    return net.fetch(`file://${file.replaceAll("\\", "/")}`);
+    const response = await net.fetch(`file://${file.replaceAll("\\", "/")}`);
+    // Inject the runtime API base into HTML pages (install dir is read-only,
+    // so config cannot be a file — see frontend resolveApiBase()).
+    const contentType = response.headers.get("content-type") ?? "";
+    if (apiBase && contentType.includes("text/html")) {
+      const html = await response.text();
+      const inject = `<script>window.__RESEARCH_OS_API_BASE__ = ${JSON.stringify(apiBase)};</script>`;
+      const patched = html.includes("<head>")
+        ? html.replace("<head>", `<head>${inject}`)
+        : inject + html;
+      return new Response(patched, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+    }
+    return response;
   });
   Menu.setApplicationMenu(null);
   createWindow();

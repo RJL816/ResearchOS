@@ -8,6 +8,7 @@ import { Topbar } from "@/components/topbar";
 import { ProjectProvider } from "@/components/project-context";
 import { ThemeInitScript, ThemeProvider } from "@/components/theme";
 import { ToastProvider } from "@/components/toast";
+import { CommandPalette } from "@/components/command-palette";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <ToastProvider>
             <Suspense fallback={children}>
               <ProjectProvider>
+                <CommandPalette />
                 <AppSidebar />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <Suspense fallback={<div className="h-[52px] shrink-0 border-b" />}>
