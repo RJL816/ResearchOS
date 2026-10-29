@@ -1,9 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import Markdown from "react-markdown";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
+import { RichText } from "@/components/rich-text";
 import { useRouteId } from "@/lib/navigation";
 import { addResearchConclusion, deleteResearchConclusion, getResearchDocument, getResearchIdea, getResearchPrompt, getResearchVersions, listIdeas, listResearchConclusions, listResearchDocuments, listRuns, saveResearchDocument, updateIdea, updateResearchIdea, updateRun, type Idea, type Run, type ResearchIdea, type ResearchSections, type ResearchConclusion, type ResearchIdeaVersion, type ResearchDocument, type ProposalParse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -19,7 +17,6 @@ import { ParseProgress } from "@/components/parse-progress";
 const SECTIONS: {key: keyof ResearchSections; label: string}[] = [
  {key:"background",label:"背景与研究问题"},{key:"goal",label:"研究目标"},{key:"methods",label:"研究方法与技术路线"},{key:"innovation",label:"创新点"},{key:"theory",label:"公式、理论与证明"},{key:"results",label:"实验结果"},{key:"conclusions",label:"研究结论与局限"},{key:"future_plan",label:"未来规划"},
 ];
-function RichText({text}: {text: string}) { return <div className="space-y-2 break-words text-sm leading-relaxed [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-auto [&_.katex-display]:overflow-x-auto"><Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{text}</Markdown></div>; }
 const selectStyle="h-10 w-full max-w-lg rounded-md border bg-background px-3 text-sm";
 export default function ResearchIdeaView() {
  const id=useRouteId(); const [item,setItem]=useState<ResearchIdea|null>(null); const [editDraft,setDraft]=useSessionState<ResearchIdea|null>(`research-os:idea:${id}:edit`,null); const editing=editDraft!==null; const draft=editDraft??item;
